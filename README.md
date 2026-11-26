@@ -7,6 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-16**（2026-11-26）
+  - ** hips 高度机制重构（治本）**：读 three-vrm-animation 源码确认 VRMA hips 轨道语义为「绝对高度 × (目标restY/动画restY) 直接写入 hips 骨骼」，但 mixer 的属性绑定与 normalized 机制组合下行为混乱（实测待机时 hips 被压到 0.296m、反应动画恢复 0.896m——点击瞬间上移 0.6m 即「突然站立+上移」的真相）。重构：`VRMAPlayer._extractHipsHeight` 把 hips 位移轨道从 clip 中摘除（mixer 不再写 hips 骨骼），高度数据经「首帧归零 + 漂移钳制」后由 Animator 每帧采样、以 **`vrm.scene.position.y` 整体平移**跟随（阻尼 6/s）——坐下整体下沉、跳起整体上移、脚与地面相对关系保持，所有状态同一阻尼通道零跳变
+  - 待机循环不参与高度跟随（实测 ChatVRM idle_loop 的 hips 轨道含深度下蹲段且语义不一致，恒定贴钳制下界）；只有反应动画采样高度
+  - 诊断基建：`scripts/test-bvh-tracks.mjs`（BVHLoader 行为打印）、渲染层 uncaught/unhandledrejection 捕获带堆栈、一次性 [diag] 日志
 - **v1.0.261126-15**（2026-11-26）
   - 修复：**反应动画播放时整个桌宠上移一段距离**——BVH 骨架 rest 定义高度与动捕 MOTION 实际站姿高度不匹配，转换出的 hips 位移轨道带恒定偏移，播放全程整体悬空。`_pinHipsToCenter` 新增「首帧归零」基准（对所有来源 VRMA 通用）：反应动画起始姿势与待机对齐，后续跳起/蹲下的相对起伏完整保留，恒定偏移消除
 - **v1.0.261126-14**（2026-11-26）

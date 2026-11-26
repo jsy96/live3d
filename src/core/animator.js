@@ -38,6 +38,7 @@ export class Animator {
     this.stateStart = 0;
     this.vrma = null; // VRMAPlayer, set via setVRMA()
     this.reactionKind = null; // 'poked' | 'happy' while STATE.REACTION
+    this._sceneY = 0; // smoothed hips-height follow offset (scene.position.y)
 
     const hb = vrm.humanoid;
     this.bones = {};
@@ -125,6 +126,8 @@ export class Animator {
     this.reactionKind = null;
     this.state = STATE.IDLE;
     this.stateStart = this.now;
+    this._sceneY = 0;
+    this.vrm.scene.position.y = 0;
   }
 
   poke() {
@@ -179,7 +182,7 @@ export class Animator {
         this.mixer.update(dt);
       }
       this.vrma.update(dt);
-      this._clampHipsHeight();
+      this._followHipsHeight(dt);
       this.vrm.update(dt);
       return;
     }
@@ -193,10 +196,15 @@ export class Animator {
       this._updateBlink(dt);
       this.mixer.update(dt);
       this.vrma.update(dt);
-      this._clampHipsHeight();
+      this._followHipsHeight(dt);
       this.vrm.update(dt);
       return;
     }
+
+    // Hand-written poses anchor to the rest height; smoothly leave any
+    // VRMA hips-height offset the scene was following until now.
+    this._sceneY = damp(this._sceneY, 0, 6, dt);
+    this.vrm.scene.position.y = this._sceneY;
 
     // Petting times out when the hand leaves the head.
     if (this.state === STATE.PETTING && this.now - this._lastPetting > PETTING_TIMEOUT) {
@@ -211,16 +219,19 @@ export class Animator {
     if (b.hips) b.hips.position.y = this.hipsBaseY;
 
     // --- model offset (browser drag), spring back when not grabbed
+    // scene.position.y always includes the hips-height follow offset (_sceneY).
     if (!platform.isDesktop) {
       const scene = this.vrm.scene;
       if (this.state === STATE.GRABBED) {
-        scene.position.set(this._modelOffset.x, this._modelOffset.y, scene.position.z);
+        scene.position.set(this._modelOffset.x, this._modelOffset.y + this._sceneY, scene.position.z);
       } else {
         const decay = Math.exp(-dt * 4);
         this._modelOffset.x *= decay;
         this._modelOffset.y *= decay;
-        scene.position.set(this._modelOffset.x, this._modelOffset.y, scene.position.z);
+        scene.position.set(this._modelOffset.x, this._modelOffset.y + this._sceneY, scene.position.z);
       }
+    } else {
+      this.vrm.scene.position.y = this._sceneY;
     }
 
     // --- expression targets for this frame
@@ -358,14 +369,16 @@ export class Animator {
   }
 
   /**
-   * Per-frame backstop: wide clamp against motion-capture drift only. The
-   * vertical displacement inside clips is physically grounded (sit/lie-down
-   * sink the hips so feet stay on the floor) and must NOT be flattened here.
+   * Follow the playing VRMA clip's hips height by moving the WHOLE model:
+   * scene.position.y tracks (clip hips height - rest height) with damping, so
+   * sit/lie-down motions sink the pet and jumps lift it while the feet keep
+   * their relation to the ground. The hips bone itself stays at rest height
+   * (its track was removed from the clip in VRMAPlayer._extractHipsHeight).
    */
-  _clampHipsHeight() {
-    const hips = this.bones.hips;
-    if (!hips) return;
-    hips.position.y = clamp(hips.position.y, this.hipsBaseY - 0.6, this.hipsBaseY + 0.25);
+  _followHipsHeight(dt) {
+    const offset = this.vrma?.currentHipsOffset() ?? 0;
+    this._sceneY = damp(this._sceneY, offset, 6, dt);
+    this.vrm.scene.position.y = this._sceneY;
   }
 
   _updateBlink(dt) {

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { createViewer, loadVRM } from './core/viewer.js';
 import { ExpressionMixer } from './core/expression.js';
 import { Animator } from './core/animator.js';
@@ -115,6 +116,52 @@ async function main() {
       animator.setVRMA(vrmaPlayer);
       platform.reportCurrentAnimation(entry.path);
       console.log('[ai-live3d] animation loaded');
+      // One-shot diagnostics for the hips-height mystery:
+      console.log(`[diag] vrm.scene has 'hips' node: ${!!currentVrm.scene.getObjectByName('hips')}`);
+      const rawHipsName = currentVrm.humanoid.getRawBoneNode?.('hips')?.name
+        ?? currentVrm.humanoid.rawHumanBones?.hips?.node?.name;
+      console.log(`[diag] raw hips node name: ${rawHipsName}, in scene: ${rawHipsName ? !!currentVrm.scene.getObjectByName(rawHipsName) : '?'}`);
+      const nRoot = currentVrm.humanoid.normalizedHumanBones?.root;
+      console.log(`[diag] normalized root name: "${nRoot?.name}", parent in scene: ${nRoot?.parent ? 'YES' : 'no'}`);
+      const nrp = currentVrm.humanoid.normalizedRestPose?.hips?.position;
+      console.log(`[diag] normalizedRestPose hips y: ${nrp ? nrp[1] : 'undefined'}`);
+      console.log(
+        `[diag] idle VRMA restHipsPosition y: ${vrmaPlayer.idleAnimation?.restHipsPosition?.y}`
+      );
+      const idleTrack = vrmaPlayer.idleHipsTrack;
+      if (idleTrack) {
+        let mn = Infinity;
+        let mx = -Infinity;
+        for (let i = 1; i < idleTrack.values.length; i += 3) {
+          mn = Math.min(mn, idleTrack.values[i]);
+          mx = Math.max(mx, idleTrack.values[i]);
+        }
+        console.log(
+          `[diag] idle hips track range: ${mn.toFixed(3)} ~ ${mx.toFixed(3)} (${idleTrack.times.length} keys)`
+        );
+      }
+      const diagRangeValues = (values, label) => {
+        if (!values || values.length === 0) {
+          console.log(`[diag] ${label}: no values`);
+          return;
+        }
+        let mn = Infinity;
+        let mx = -Infinity;
+        for (let i = 1; i < values.length; i += 3) {
+          mn = Math.min(mn, values[i]);
+          mx = Math.max(mx, values[i]);
+        }
+        console.log(`[diag] ${label} hips y range: ${mn.toFixed(3)} ~ ${mx.toFixed(3)}`);
+      };
+      diagRangeValues(
+        vrmaPlayer.action?.getClip()?.tracks.find((x) => x.name.endsWith('hips.position'))?.values,
+        'idle-clip'
+      );
+      for (const [kind, e] of vrmaPlayer.reactions) {
+        const t = e.animation?.humanoidTracks?.translation?.get('hips');
+        if (t) diagRangeValues(t.values, `reaction-${kind}-raw`);
+      }
+      console.log('[diag] done');
       await loadReactionClips();
     } catch (err) {
       console.error(`[ai-live3d] animation load failed: ${err.message}`);
@@ -229,6 +276,23 @@ async function main() {
     }
   }
   requestAnimationFrame(frame);
+
+  // Debug: auto-poke and measure hips height during reaction playback.
+  if (isDebug) {
+    const tmp = new THREE.Vector3();
+    setInterval(() => {
+      if (!animator || !currentVrm) return;
+      const raw = currentVrm.humanoid.getRawBoneNode?.('hips')
+        ?? currentVrm.humanoid.rawHumanBones?.hips?.node;
+      const norm = currentVrm.humanoid.getNormalizedBoneNode('hips');
+      console.log(
+        `[hips-watch] state=${animator.state} rawHipsY=${raw ? raw.position.y.toFixed(3) : '?'} normHipsY=${norm ? norm.position.y.toFixed(3) : '?'} rawWorldY=${raw ? raw.getWorldPosition(tmp).y.toFixed(3) : '?'}`
+      );
+    }, 500);
+    setInterval(() => {
+      animator?.poke();
+    }, 4000);
+  }
 }
 
 main().catch((err) => {
