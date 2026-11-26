@@ -206,11 +206,15 @@ export class VRMAPlayer {
     for (let i = 0; i < v.length; i += 3) {
       v[i] = 0; // x: no lateral drift
       v[i + 2] = 0; // z: no forward/back drift
-      // y: keep the full vertical displacement — mocap data is grounded by
-      // nature (hips sink when sitting/lying so feet stay on the floor).
+      // y: keep the vertical displacement but GROUND THE CLIP ON ITS FIRST
+      // FRAME. BVH skeleton rest offsets often differ from the motion's actual
+      // standing height — that constant mismatch would shift the whole model
+      // up/down for the entire clip. Anchoring frame 0 to zero displacement
+      // aligns the reaction start with the idle pose; later bobbing is kept.
+      const y0 = v[1];
       // Clamp ONLY against capture drift (some BVH tracks drift meters over
       // time) — the wide band keeps sit/lie-down intact, prevents off-screen.
-      v[i + 1] = Math.max(-0.6, Math.min(0.25, v[i + 1]));
+      v[i + 1] = Math.max(-0.6, Math.min(0.25, v[i + 1] - y0));
     }
   }
 }
