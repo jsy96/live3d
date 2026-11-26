@@ -64,6 +64,27 @@ async function main() {
   }
 
   // Idle animation (VRMA): default to the first file; applied once a model is loaded.
+  // Interaction reactions map to VRMA clips by file name when present.
+  const REACTION_CLIPS = { poked: 'surprise.vrma', happy: 'hello.vrma' };
+  let animMap = new Map();
+
+  async function loadReactionClips() {
+    if (!currentVrm || !vrmaPlayer?.ready) return;
+    for (const [kind, file] of Object.entries(REACTION_CLIPS)) {
+      const entry = animMap.get(file.toLowerCase());
+      if (!entry) {
+        console.log(`[ai-live3d] reaction clip not in animations/: ${file} (hand-written fallback)`);
+        continue;
+      }
+      try {
+        await vrmaPlayer.loadReaction(kind, entry.url, currentVrm);
+        console.log(`[ai-live3d] reaction clip loaded: ${kind} <- ${file}`);
+      } catch (err) {
+        console.error(`[ai-live3d] reaction ${kind} load failed: ${err.message}`);
+      }
+    }
+  }
+
   async function loadAnimation(entry) {
     if (!entry) {
       vrmaPlayer?.clear();
@@ -81,6 +102,7 @@ async function main() {
       animator.setVRMA(vrmaPlayer);
       platform.reportCurrentAnimation(entry.path);
       console.log('[ai-live3d] animation loaded');
+      await loadReactionClips();
     } catch (err) {
       console.error(`[ai-live3d] animation load failed: ${err.message}`);
       animator?.setVRMA(null);
@@ -89,6 +111,9 @@ async function main() {
 
   // Pick the first model in models/ (alphabetical), else show the setup panel.
   const anims = await platform.listAnimations();
+  animMap = new Map(
+    anims.map((a) => [a.path.split(/[\\/]/).pop().toLowerCase(), a])
+  );
   pendingAnimation = anims.length > 0 ? anims[0] : null;
   const models = await platform.listModels();
   if (models.length > 0) {

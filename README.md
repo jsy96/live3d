@@ -7,6 +7,9 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-9**（2026-11-26）
+  - **互动反应迁入 VRMA**：新增 `STATE.REACTION`，`VRMAPlayer` 支持单次反应 clip（`LoopOnce`，`loadReaction` 预加载 / `startReaction` 播放 / finished 事件自动回待机循环）。映射：**戳 → `surprise.vrma`（惊讶）、双击 → `hello.vrma`（挥手问好）**；素材缺失自动降级手写动画；反应播放期间手写层只叠加对应表情（surprised/happy）；摸头是持续状态，保持手写反馈
+  - 新增 `start-pet.bat`：双击即启动桌宠（首次自动 npm install + 构建，之后直接启动）；`scripts/install-shortcut.ps1` 一键创建桌面快捷方式（已创建「AI Live3D Pet.lnk」）
 - **v1.0.261126-8**（2026-11-26）
   - **动作库扩容至 126 个 VRMA**：镜像下载 [test157t/VRM-Assets-Pack-For-Silly-Tavern](https://github.com/test157t/VRM-Assets-Pack-For-Silly-Tavern) 的 116 个 BVH 动捕动作（打招呼/跳舞/走跑/坐下/惊讶/生气/害怕/感恩等）本地批量转换为 VRMA（116/116 成功），加 9 个现成 VRMA（greeting/hello/peace sign/spin 等）+ 原有 idle_loop
   - 新增离线转换器：`scripts/bvh-converter/` 复刻官方 [vrm-c/bvh2vrma](https://github.com/vrm-c/bvh2vrma) 转换核心（MIT），`scripts/convert-bvh-to-vrma.ts` 支持批量转换 + BVH 单位自动探测（cm/dm），Node 下运行需 FileReader polyfill（已内置）
@@ -97,6 +100,10 @@ ai-live3d/
 ```
 
 ## 使用方式
+
+**双击 `start-pet.bat`**（或桌面快捷方式「AI Live3D Pet」）即可启动；首次运行会自动安装依赖并构建。
+
+命令行方式：
 
 ```bash
 npm install   # 首次；Electron 二进制走 npmmirror（见 .npmrc）

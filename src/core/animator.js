@@ -7,6 +7,7 @@ export const STATE = Object.freeze({
   GRABBED: 'grabbed',
   POKED: 'poked',
   HAPPY: 'happy',
+  REACTION: 'reaction', // one-shot VRMA reaction clip is playing
 });
 
 // Normalized-bone Z rotation that lowers the arms from the VRM T-pose into a
@@ -36,6 +37,7 @@ export class Animator {
     this.now = 0;
     this.stateStart = 0;
     this.vrma = null; // VRMAPlayer, set via setVRMA()
+    this.reactionKind = null; // 'poked' | 'happy' while STATE.REACTION
 
     const hb = vrm.humanoid;
     this.bones = {};
@@ -80,6 +82,11 @@ export class Animator {
 
   setState(next) {
     if (this.state === next) return;
+    // Any state change interrupts a playing reaction clip.
+    if (this.state === STATE.REACTION && next !== STATE.REACTION) {
+      this.vrma?.stopReaction();
+      this.reactionKind = null;
+    }
     this.state = next;
     this.stateStart = this.now;
     // VRMA idle clip and manual poses both write normalized bones: stop the
@@ -88,11 +95,37 @@ export class Animator {
     else this.vrma?.play();
   }
 
+  /**
+   * Try to play a one-shot VRMA reaction clip ('poked', 'happy').
+   * Returns false when that clip was not loaded — callers fall back to the
+   * hand-written state.
+   */
+  startReaction(kind) {
+    const entry = this.vrma?.reactions?.get?.(kind);
+    if (!entry?.action) return false;
+    // Direct state write: setState() would interrupt the reaction we just
+    // started (any state change stops a playing reaction).
+    this.state = STATE.REACTION;
+    this.stateStart = this.now;
+    this.reactionKind = kind;
+    this.vrma.startReaction(kind, () => this.onReactionFinished());
+    return true;
+  }
+
+  /** One-shot reaction finished: resume the idle loop. */
+  onReactionFinished() {
+    if (this.state !== STATE.REACTION) return;
+    this.reactionKind = null;
+    this.setState(STATE.IDLE);
+  }
+
   poke() {
+    if (this.startReaction('poked')) return;
     this.setState(STATE.POKED);
   }
 
   excite() {
+    if (this.startReaction('happy')) return;
     this.setState(STATE.HAPPY);
   }
 
@@ -137,6 +170,19 @@ export class Animator {
         this._updateBlink(dt);
         this.mixer.update(dt);
       }
+      this.vrma.update(dt);
+      this.vrm.update(dt);
+      return;
+    }
+
+    // One-shot VRMA reaction (poke/excite): mixer drives the pose, hand-written
+    // layer only adds the matching facial expression.
+    if (this.state === STATE.REACTION && this.vrma?.reactionRunning) {
+      this.mixer.clearAll(['blink']);
+      this.mixer.set('surprised', this.reactionKind === 'poked' ? 0.9 : 0);
+      this.mixer.set('happy', this.reactionKind === 'happy' ? 1 : 0);
+      this._updateBlink(dt);
+      this.mixer.update(dt);
       this.vrma.update(dt);
       this.vrm.update(dt);
       return;
