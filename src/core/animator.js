@@ -358,14 +358,14 @@ export class Animator {
   }
 
   /**
-   * Per-frame backstop: clamp the hips height around its rest position so no
-   * VRMA clip (whose vertical displacement gets scaled to the model's rest
-   * height) can ever push the pet out of the window.
+   * Per-frame backstop: wide clamp against motion-capture drift only. The
+   * vertical displacement inside clips is physically grounded (sit/lie-down
+   * sink the hips so feet stay on the floor) and must NOT be flattened here.
    */
   _clampHipsHeight() {
     const hips = this.bones.hips;
     if (!hips) return;
-    hips.position.y = clamp(hips.position.y, this.hipsBaseY - 0.15, this.hipsBaseY + 0.15);
+    hips.position.y = clamp(hips.position.y, this.hipsBaseY - 0.6, this.hipsBaseY + 0.25);
   }
 
   _updateBlink(dt) {
