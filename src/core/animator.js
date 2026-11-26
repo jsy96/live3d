@@ -12,13 +12,16 @@ export const STATE = Object.freeze({
 // Normalized-bone Z rotation that lowers the arms from the VRM T-pose into a
 // relaxed A-pose (left arm positive, right arm negative). ~63 degrees.
 const POKE_DURATION = 0.5;
-const HAPPY_DURATION = 1.0;
+const HAPPY_DURATION = 1.1;
+const JUMP_HEIGHT = 0.1; // m, apex of the hop
+const CROUCH_DEPTH = 0.045; // m, anticipation/landing squash depth
 const PETTING_TIMEOUT = 0.45; // s without petting input before returning to idle
 const BLINK_DURATION = 0.22;
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-dt * rate));
+const easeInOut = (q) => q * q * (3 - 2 * q); // smoothstep
 
 /**
  * Poses the VRM every frame: resets to the A-pose base, layers breathing /
@@ -213,7 +216,15 @@ export class Animator {
       case STATE.POKED: {
         surprised = 1;
         const p = clamp(inState / POKE_DURATION, 0, 1);
-        if (b.hips) b.hips.position.y = this.hipsBaseY + Math.sin(p * Math.PI) * 0.055;
+        // Startle: tiny dip first, then a quick springy hop on a gravity arc.
+        let dip;
+        if (p < 0.18) {
+          dip = -easeInOut(p / 0.18) * 0.03;
+        } else {
+          const q = (p - 0.18) / 0.82;
+          dip = 0.06 * 4 * q * (1 - q);
+        }
+        if (b.hips) b.hips.position.y = this.hipsBaseY + dip;
         if (b.spine) b.spine.rotation.x = base.spine.x + 0.08 * Math.sin(p * Math.PI);
         if (p >= 1) this.setState(STATE.IDLE);
         break;
@@ -221,12 +232,36 @@ export class Animator {
       case STATE.HAPPY: {
         happy = 1;
         const p = clamp(inState / HAPPY_DURATION, 0, 1);
-        // Two decaying bounces + arms waving overhead.
-        const bounce = Math.abs(Math.sin(p * Math.PI * 2)) * (1 - p);
-        if (b.hips) b.hips.position.y = this.hipsBaseY + bounce * 0.09;
-        const wave = Math.sin(t * 10) * 0.25;
-        if (b.leftUpperArm) b.leftUpperArm.rotation.z = A_POSE_ANGLE + 0.9 + wave;
-        if (b.rightUpperArm) b.rightUpperArm.rotation.z = -A_POSE_ANGLE - 0.9 - wave;
+        // Physics-style hop, all phases on one time axis so the arms stay in
+        // sync with the jump: crouch anticipation -> parabolic airborne arc ->
+        // landing squash -> small rebound to stand.
+        const CROUCH_END = 0.14;
+        const LAND_END = 0.62;
+        const SETTLE_END = 0.8;
+        let hopY = 0;
+        let armRaise = 0;
+        if (p < CROUCH_END) {
+          const q = p / CROUCH_END;
+          hopY = -easeInOut(q) * CROUCH_DEPTH;
+          armRaise = -0.1 * Math.sin(q * Math.PI); // slight wind-up
+        } else if (p < LAND_END) {
+          const q = (p - CROUCH_END) / (LAND_END - CROUCH_END);
+          hopY = JUMP_HEIGHT * 4 * q * (1 - q); // gravity parabola, apex mid-air
+          armRaise = 0.85 + Math.sin(q * Math.PI) * 0.15; // arms up through the jump
+        } else if (p < SETTLE_END) {
+          const q = (p - LAND_END) / (SETTLE_END - LAND_END);
+          hopY = -Math.sin(q * Math.PI) * CROUCH_DEPTH * 0.8; // landing squash
+          armRaise = 0.85 * (1 - q); // arms come down while landing
+        } else {
+          const q = (p - SETTLE_END) / (1 - SETTLE_END);
+          hopY = Math.sin(q * Math.PI) * CROUCH_DEPTH * 0.25; // small rebound
+          armRaise = 0;
+        }
+        if (b.hips) b.hips.position.y = this.hipsBaseY + hopY;
+        const wave = armRaise > 0.3 ? Math.sin(t * 8) * 0.12 * armRaise : 0;
+        if (b.leftUpperArm) b.leftUpperArm.rotation.z = A_POSE_ANGLE + armRaise * 0.95 + wave;
+        if (b.rightUpperArm) b.rightUpperArm.rotation.z = -A_POSE_ANGLE - armRaise * 0.95 - wave;
+        if (b.spine) b.spine.rotation.x = base.spine.x + (armRaise > 0 ? 0.05 * armRaise : 0);
         if (p >= 1) this.setState(STATE.IDLE);
         break;
       }
