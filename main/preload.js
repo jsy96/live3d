@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('live3d', {
   // Window-relative bounding rect of the pet (or null); the main process
   // polls the cursor against it to toggle click-through.
   updateRegion: (region) => ipcRenderer.send('hit:updateRegion', region),
+  showModelPicker: (x, y) => ipcRenderer.send('menu:modelPicker', x, y),
+  reportCurrentModel: (modelPath) => ipcRenderer.send('models:current', modelPath),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
   onModelChanged: (cb) => {
     ipcRenderer.on('models:changed', (_event, entry) => cb(entry));

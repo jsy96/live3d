@@ -42,6 +42,16 @@ export const platform = {
     if (bridge) bridge.onModelChanged(cb);
   },
 
+  // Desktop only: right-click -> native model picker popup at that point.
+  showModelPicker(x, y) {
+    if (bridge) bridge.showModelPicker(x, y);
+  },
+
+  // Report the actually-loaded model path so the picker can checkmark it.
+  reportCurrentModel(modelPath) {
+    if (bridge) bridge.reportCurrentModel(modelPath);
+  },
+
   async getAppVersion() {
     if (bridge) return bridge.getAppVersion();
     return 'web';

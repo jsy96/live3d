@@ -41,6 +41,9 @@ async function main() {
         onPointerNDC: (x, y) => viewer.setLookFromPointer(x, y),
       });
       panel.classList.add('hidden');
+      if (typeof entry === 'object' && entry.path) {
+        platform.reportCurrentModel(entry.path);
+      }
       console.log('[ai-live3d] model loaded');
     } catch (err) {
       console.error(`[ai-live3d] model load failed: ${err.message}`);
@@ -98,6 +101,12 @@ async function main() {
     }
     sendRegion(region);
   }
+
+  // Right-click anywhere on the pet or the setup panel -> model picker menu.
+  window.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    platform.showModelPicker(e.clientX, e.clientY);
+  });
 
   // Frame loop.
   let last = performance.now();

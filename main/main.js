@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, protocol, net, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -63,6 +63,13 @@ function startCursorPoll() {
 }
 
 let win = null;
+let currentModelPath = null;
+
+/** Switch the active model and remember it (right-click menu shows a checkmark). */
+function setModel(entry) {
+  currentModelPath = entry.path;
+  if (win) win.webContents.send('models:changed', entry);
+}
 
 function pickModelDialog() {
   return dialog.showOpenDialog(win, {
@@ -137,6 +144,36 @@ function registerIpc() {
   ipcMain.handle('app:version', () => APP_VERSION);
   ipcMain.on('app:toggleDevTools', () => win?.webContents.toggleDevTools());
   ipcMain.on('app:quit', () => app.quit());
+
+  // Renderer reports which model it actually loaded (start-up picks models[0]).
+  ipcMain.on('models:current', (_event, modelPath) => {
+    currentModelPath = modelPath;
+  });
+
+  // Right-click on the pet / panel -> native model picker menu at that point.
+  ipcMain.on('menu:modelPicker', (_event, x, y) => {
+    if (!win) return;
+    const template = listModels().map((m) => ({
+      label: path.basename(m.path).replace(/\.(vrm|glb)$/i, ''),
+      type: 'checkbox',
+      checked: m.path === currentModelPath,
+      click: () => setModel(m),
+    }));
+    if (template.length > 0) template.push({ type: 'separator' });
+    template.push({
+      label: 'Open file...',
+      click: async () => {
+        if (!win) return;
+        const result = await pickModelDialog();
+        if (!result.canceled) setModel(toModelEntry(result.filePaths[0]));
+      },
+    });
+    Menu.buildFromTemplate(template).popup({
+      window: win,
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+  });
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -165,9 +202,7 @@ if (!gotLock) {
       async () => {
         if (!win) return;
         const result = await pickModelDialog();
-        if (!result.canceled && win) {
-          win.webContents.send('models:changed', toModelEntry(result.filePaths[0]));
-        }
+        if (!result.canceled) setModel(toModelEntry(result.filePaths[0]));
       }
     );
   });
