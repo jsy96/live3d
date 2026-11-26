@@ -185,7 +185,8 @@ function registerIpc() {
     }));
     if (template.length > 0) template.push({ type: 'separator' });
 
-    // Animation section (VRMA idle clips; "(None)" = hand-written idle pose).
+    // Animation section (VRMA clips; "(None)" = hand-written idle pose).
+    // 100+ files are grouped into submenus so the popup stays usable.
     template.push({ label: 'Animation', enabled: false });
     template.push({
       label: '(None)',
@@ -193,12 +194,27 @@ function registerIpc() {
       checked: currentAnimationPath === null,
       click: () => setAnimation(null),
     });
+
+    const prettyName = (p) =>
+      path.basename(p).replace(/\.vrma$/i, '').replace(/[_-]+/g, ' ').trim();
+    const groups = { Actions: [], Dances: [], 'Idle & Sit': [], 'Emotions & Others': [] };
     for (const a of listAnimations()) {
+      const name = path.basename(a.path).toLowerCase();
+      if (name.startsWith('action_')) groups.Actions.push(a);
+      else if (name.startsWith('dance_')) groups.Dances.push(a);
+      else if (name.startsWith('sit_') || name.startsWith('idle')) groups['Idle & Sit'].push(a);
+      else groups['Emotions & Others'].push(a);
+    }
+    for (const [label, entries] of Object.entries(groups)) {
+      if (entries.length === 0) continue;
       template.push({
-        label: path.basename(a.path).replace(/\.vrma$/i, ''),
-        type: 'checkbox',
-        checked: a.path === currentAnimationPath,
-        click: () => setAnimation(a),
+        label: `${label} (${entries.length})`,
+        submenu: entries.map((a) => ({
+          label: prettyName(a.path),
+          type: 'checkbox',
+          checked: a.path === currentAnimationPath,
+          click: () => setAnimation(a),
+        })),
       });
     }
     template.push({ type: 'separator' });

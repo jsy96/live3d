@@ -7,6 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-8**（2026-11-26）
+  - **动作库扩容至 126 个 VRMA**：镜像下载 [test157t/VRM-Assets-Pack-For-Silly-Tavern](https://github.com/test157t/VRM-Assets-Pack-For-Silly-Tavern) 的 116 个 BVH 动捕动作（打招呼/跳舞/走跑/坐下/惊讶/生气/害怕/感恩等）本地批量转换为 VRMA（116/116 成功），加 9 个现成 VRMA（greeting/hello/peace sign/spin 等）+ 原有 idle_loop
+  - 新增离线转换器：`scripts/bvh-converter/` 复刻官方 [vrm-c/bvh2vrma](https://github.com/vrm-c/bvh2vrma) 转换核心（MIT），`scripts/convert-bvh-to-vrma.ts` 支持批量转换 + BVH 单位自动探测（cm/dm），Node 下运行需 FileReader polyfill（已内置）
+  - 右键菜单 `Animation` 区块改为分组子菜单：Actions / Dances / Idle & Sit / Emotions & Others，126 项不再撑爆菜单
 - **v1.0.261126-7**（2026-11-26）
   - 修复：**VRMA 待机角色左右乱窜**——`idle_loop.vrma` 为直播场景制作，自带 hips 水平位移轨道；`VRMAPlayer._pinHipsToCenter()` 加载后把 hips 位移的 X/Z 分量清零（保留 Y 起伏），任何 VRMA 强制「原地站桩」适配桌宠窗口
   - 修复：**欢呼时双手臂在背后交叉**——normalized 骨骼中左臂沿 $-X$，`rotation.z` 正向转过 90° 垂直线后手臂越过身体中线甩向对侧；上举改为反向旋转（从下垂 63° 转回水平再转负角度至斜上外侧），幅度从 +0.95 改为 -2.0 方向
