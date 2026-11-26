@@ -22,4 +22,6 @@ if not exist "dist\bundle.js" (
   )
 )
 
-start "" "%~dp0node_modules\electron\dist\electron.exe" "%~dp0."
+rem NOTE: the app path is a bare "." on purpose — appending "%~dp0" would end
+rem with \" which cmd parses as an escaped quote and breaks the electron launch.
+start "" "node_modules\electron\dist\electron.exe" .
