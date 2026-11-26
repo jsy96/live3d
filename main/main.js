@@ -7,6 +7,16 @@ const { APP_VERSION } = require('./version');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
 const ANIM_DIR = path.join(__dirname, '..', 'animations');
+
+// Shared log file (also written from createWindow's console-message hook).
+const LOG_FILE = path.join(__dirname, '..', 'ai-live3d.log');
+const appendLog = (line) => {
+  try {
+    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${line}\n`);
+  } catch {
+    // logging must never break the app
+  }
+};
 // Custom protocol to serve model files: renderer fetch() cannot read file:// URLs.
 const MODEL_SCHEME = 'live3d-model';
 
@@ -134,14 +144,6 @@ function createWindow() {
 
   // Renderer logs land in a file so failures are diagnosable no matter how
   // the app was started (double-clicked bat has no visible stdout).
-  const LOG_FILE = path.join(__dirname, '..', 'ai-live3d.log');
-  const appendLog = (line) => {
-    try {
-      fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${line}\n`);
-    } catch {
-      // logging must never break the app
-    }
-  };
   win.webContents.on('console-message', (_event, _level, message) => {
     console.log(`[renderer] ${message}`);
     appendLog(`[renderer] ${message}`);
@@ -257,6 +259,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
+    appendLog('[second-instance] another launch attempt: showing the existing window');
     if (win) {
       win.show();
       win.focus();
