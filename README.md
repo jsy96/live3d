@@ -7,6 +7,11 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-6**（2026-11-26）
+  - **接入 VRMA 动画路线**：新增 `@pixiv/three-vrm-animation` 依赖与 `src/core/vrma.js`（`VRMAPlayer`：GLTFLoader + `VRMAnimationLoaderPlugin` 解析 `.vrma`，`createVRMAnimationClip` 生成 AnimationClip，`rebind()` 换模型时免下载重绑）
+  - **与手写动画互斥**：待机时 VRMA 驱动标准骨骼（`Animator.update` 让位），任何互动（摸头/拖拽/戳/欢呼）期间自动暂停 VRMA、由手写姿势接管，回待机自动恢复播放；VRMA 自带表情轨道时不写入手写表情避免覆盖
+  - 右键菜单新增 `Animation` 区块：`(None)`（手写待机）/ 各 `.vrma` 勾选切换；`animations/` 目录增删文件即刻生效
+  - 内置动画：`idle_loop.vrma`（pixiv/ChatVRM 官方待机循环，157,664 字节镜像下载校验一致）；API 用法经 `node_modules/@pixiv/three-vrm-animation` 类型定义核对（`gltf.userData.vrmAnimations`、独立函数 `createVRMAnimationClip(vrmAnimation, vrm)`）
 - **v1.0.261126-5**（2026-11-26）
   - 重做欢呼跳跃动画：原来是 `|sin|` 乘衰减系数（周期边界速度突变、手臂节奏与跳跃脱节），改为符合物理的四段式——**预备下蹲 → 重力抛物线腾空（同步举臂）→ 落地压低缓冲 → 小回弹站直**，全部相位在同一时间轴上，手臂摆动只在腾空段叠加小幅波
   - 被戳（poke）动画同步改为「先受惊微蹲 18% 时长 → 抛物线弹起」，不再是对称正弦浮动
@@ -37,6 +42,7 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 一期 | 鼠标/触摸手势互动（摸头、拖拽、戳、双击） | ✅ 已实现 |
 | 一期 | 待机动画（呼吸/眨眼/视线跟随/歪头） | ✅ 已实现 |
 | 一期 | 透明置顶 + 点击穿透 + 托盘控制 | ✅ 已实现 |
+| 一期 | VRMA 待机动画（VRM Animation 标准格式，互斥混合） | ✅ 已实现 |
 | 二期 | 摄像头手势识别（MediaPipe Hands：挥手/比心/隔空摸头） | 预留接口 |
 | 三期 | AI 对话（LLM 回复 + 情绪驱动表情 + 口型同步） | 预留接口 |
 | 四期 | 电脑 ↔ 手机漫游（局域网网页端 + 宠物迁移动画） | 预留接口 |
@@ -66,6 +72,8 @@ ai-live3d/
 │   ├── core/
 │   │   ├── viewer.js        # Three.js 场景/相机自动取景/VRM 加载
 │   │   ├── animator.js      # 动画状态机（idle/petting/grabbed/poked/happy）
+│   │   ├── vrma.js          # VRMA 待机动画播放器（three-vrm-animation）
+│   │   ├── pose.js          # 共享 A-pose 常量与应用
 │   │   └── expression.js    # 表情缓动混合器（含口型接口）
 │   ├── interaction/
 │   │   ├── hit-test.js      # 屏幕空间命中判定（头/身体包围球，非网格 raycast）
@@ -74,6 +82,7 @@ ai-live3d/
 │   ├── hand-tracking.js     # 二期接口：MediaPipe 手势
 │   └── sync/roaming.js      # 四期接口：设备间漫游协议
 ├── models/                  # 放 .vrm 模型（见 models/README.md，不入 git）
+├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
 ├── assets/                  # icon.png / tray.png（脚本生成）
 ├── scripts/gen_icon.py      # 图标生成脚本
 ├── dist/bundle.js           # esbuild 产物（不入 git，npm start 自动构建）
@@ -88,7 +97,7 @@ npm start     # 构建 renderer + 启动桌宠
 ```
 
 1. 首次启动若无模型，会弹出设置面板：把 `.vrm` 放进 `models/` 文件夹，或点「打开文件...」选择
-2. **换模型**：在宠物上**右键**弹出菜单（模型列表勾选切换 / 打开文件...），或用托盘菜单 `Change model...`；往 `models/` 文件夹增删 `.vrm` 文件后右键菜单即刻可见
+2. **换模型 / 换待机动作**：在宠物上**右键**弹出菜单——模型列表勾选切换 + `Animation` 区块切换 `.vrma` 待机动画（`(None)` 为手写待机）；往 `models/`、`animations/` 文件夹增删文件即刻生效
 3. 交互：
    - **摸头**：在头部来回滑动（累计约 90px 路径触发）→ 开心眯眼、头部蹭手
    - **拖拽**：按住身体拖动 → 窗口跟随、身体反向倾斜、手臂挥动

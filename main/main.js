@@ -6,6 +6,7 @@ const { createTray } = require('./tray');
 const { APP_VERSION } = require('./version');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
+const ANIM_DIR = path.join(__dirname, '..', 'animations');
 // Custom protocol to serve model files: renderer fetch() cannot read file:// URLs.
 const MODEL_SCHEME = 'live3d-model';
 
@@ -64,11 +65,29 @@ function startCursorPoll() {
 
 let win = null;
 let currentModelPath = null;
+let currentAnimationPath = null;
 
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
 function setModel(entry) {
   currentModelPath = entry.path;
   if (win) win.webContents.send('models:changed', entry);
+}
+
+/** Switch the active idle animation (null = hand-written idle pose). */
+function setAnimation(entry) {
+  currentAnimationPath = entry ? entry.path : null;
+  if (win) win.webContents.send('animations:changed', entry ?? null);
+}
+
+function listAnimations() {
+  try {
+    return fs
+      .readdirSync(ANIM_DIR)
+      .filter((f) => /\.vrma$/i.test(f))
+      .map((f) => toModelEntry(path.join(ANIM_DIR, f)));
+  } catch {
+    return [];
+  }
 }
 
 function pickModelDialog() {
@@ -123,6 +142,11 @@ function createWindow() {
 
 function registerIpc() {
   ipcMain.handle('models:list', () => listModels());
+  ipcMain.handle('animations:list', () => listAnimations());
+
+  ipcMain.on('animations:current', (_event, animPath) => {
+    currentAnimationPath = animPath;
+  });
 
   ipcMain.handle('models:pick', async () => {
     if (!win) return null;
@@ -160,6 +184,25 @@ function registerIpc() {
       click: () => setModel(m),
     }));
     if (template.length > 0) template.push({ type: 'separator' });
+
+    // Animation section (VRMA idle clips; "(None)" = hand-written idle pose).
+    template.push({ label: 'Animation', enabled: false });
+    template.push({
+      label: '(None)',
+      type: 'checkbox',
+      checked: currentAnimationPath === null,
+      click: () => setAnimation(null),
+    });
+    for (const a of listAnimations()) {
+      template.push({
+        label: path.basename(a.path).replace(/\.vrma$/i, ''),
+        type: 'checkbox',
+        checked: a.path === currentAnimationPath,
+        click: () => setAnimation(a),
+      });
+    }
+    template.push({ type: 'separator' });
+
     template.push({
       label: 'Open file...',
       click: async () => {

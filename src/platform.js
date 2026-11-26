@@ -52,6 +52,18 @@ export const platform = {
     if (bridge) bridge.reportCurrentModel(modelPath);
   },
 
+  // Idle animation (VRMA) handling; all no-ops in the browser.
+  async listAnimations() {
+    if (bridge) return bridge.listAnimations();
+    return [];
+  },
+  reportCurrentAnimation(animPath) {
+    if (bridge) bridge.reportCurrentAnimation(animPath);
+  },
+  onAnimationChanged(cb) {
+    if (bridge) bridge.onAnimationChanged(cb);
+  },
+
   async getAppVersion() {
     if (bridge) return bridge.getAppVersion();
     return 'web';

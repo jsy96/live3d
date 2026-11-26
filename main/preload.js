@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('live3d', {
   updateRegion: (region) => ipcRenderer.send('hit:updateRegion', region),
   showModelPicker: (x, y) => ipcRenderer.send('menu:modelPicker', x, y),
   reportCurrentModel: (modelPath) => ipcRenderer.send('models:current', modelPath),
+  listAnimations: () => ipcRenderer.invoke('animations:list'),
+  reportCurrentAnimation: (animPath) => ipcRenderer.send('animations:current', animPath),
+  onAnimationChanged: (cb) => {
+    ipcRenderer.on('animations:changed', (_event, entry) => cb(entry));
+  },
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
   onModelChanged: (cb) => {
     ipcRenderer.on('models:changed', (_event, entry) => cb(entry));

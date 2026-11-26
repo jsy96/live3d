@@ -35,6 +35,7 @@ export class Animator {
     this.state = STATE.IDLE;
     this.now = 0;
     this.stateStart = 0;
+    this.vrma = null; // VRMAPlayer, set via setVRMA()
 
     const hb = vrm.humanoid;
     this.bones = {};
@@ -71,10 +72,20 @@ export class Animator {
     this.tiltTarget = 0;
   }
 
+  /** Attach a VRMAPlayer for idle-loop animation (or null to disable). */
+  setVRMA(player) {
+    this.vrma = player;
+    if (this.state === STATE.IDLE) player?.play();
+  }
+
   setState(next) {
     if (this.state === next) return;
     this.state = next;
     this.stateStart = this.now;
+    // VRMA idle clip and manual poses both write normalized bones: stop the
+    // clip during interactions, resume it when back to idle.
+    if (next !== STATE.IDLE) this.vrma?.stop();
+    else this.vrma?.play();
   }
 
   poke() {
@@ -117,6 +128,19 @@ export class Animator {
     const b = this.bones;
     const base = this.base;
     const inState = this.now - this.stateStart;
+
+    // Idle VRMA mode: the AnimationMixer drives the pose (normalized bones),
+    // so all manual pose writes below are skipped while it runs.
+    if (this.state === STATE.IDLE && this.vrma?.running) {
+      if (!this.vrma.hasExpressions) {
+        this.mixer.clearAll();
+        this._updateBlink(dt);
+        this.mixer.update(dt);
+      }
+      this.vrma.update(dt);
+      this.vrm.update(dt);
+      return;
+    }
 
     // Petting times out when the hand leaves the head.
     if (this.state === STATE.PETTING && this.now - this._lastPetting > PETTING_TIMEOUT) {

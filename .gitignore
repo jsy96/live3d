@@ -4,3 +4,4 @@ dist/
 *.log
 models/*.vrm
 models/*.glb
+animations/*.vrma

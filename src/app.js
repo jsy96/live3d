@@ -1,6 +1,7 @@
 import { createViewer, loadVRM } from './core/viewer.js';
 import { ExpressionMixer } from './core/expression.js';
 import { Animator } from './core/animator.js';
+import { VRMAPlayer } from './core/vrma.js';
 import { HitTester } from './interaction/hit-test.js';
 import { MouseInteractor } from './interaction/mouse.js';
 import { platform } from './platform.js';
@@ -23,6 +24,9 @@ async function main() {
   let animator = null;
   let hitTester = null;
   let interactor = null;
+  let vrmaPlayer = null;
+  let currentVrm = null;
+  let pendingAnimation; // undefined = not initialized; null = none; entry = waiting for model
 
   function showPanel(message) {
     panelError.textContent = message || '';
@@ -44,14 +48,48 @@ async function main() {
       if (typeof entry === 'object' && entry.path) {
         platform.reportCurrentModel(entry.path);
       }
+      // Re-bind the VRMA clip to the new model if one was already chosen.
+      currentVrm = vrm;
+      if (vrmaPlayer?.ready) vrmaPlayer.rebind(vrm);
       console.log('[ai-live3d] model loaded');
+      if (pendingAnimation !== undefined) {
+        const e = pendingAnimation;
+        pendingAnimation = undefined;
+        await loadAnimation(e);
+      }
     } catch (err) {
       console.error(`[ai-live3d] model load failed: ${err.message}`);
       showPanel(`模型加载失败: ${err.message}`);
     }
   }
 
+  // Idle animation (VRMA): default to the first file; applied once a model is loaded.
+  async function loadAnimation(entry) {
+    if (!entry) {
+      vrmaPlayer?.clear();
+      animator?.setVRMA(null);
+      platform.reportCurrentAnimation(null);
+      return;
+    }
+    if (!currentVrm) {
+      pendingAnimation = entry;
+      return;
+    }
+    try {
+      if (!vrmaPlayer) vrmaPlayer = new VRMAPlayer();
+      await vrmaPlayer.load(entry.url, currentVrm);
+      animator.setVRMA(vrmaPlayer);
+      platform.reportCurrentAnimation(entry.path);
+      console.log('[ai-live3d] animation loaded');
+    } catch (err) {
+      console.error(`[ai-live3d] animation load failed: ${err.message}`);
+      animator?.setVRMA(null);
+    }
+  }
+
   // Pick the first model in models/ (alphabetical), else show the setup panel.
+  const anims = await platform.listAnimations();
+  pendingAnimation = anims.length > 0 ? anims[0] : null;
   const models = await platform.listModels();
   if (models.length > 0) {
     await loadModel(models[0]);
@@ -61,6 +99,7 @@ async function main() {
 
   // Model picked from the tray menu arrives via IPC event.
   platform.onModelChanged((entry) => loadModel(entry));
+  platform.onAnimationChanged((entry) => loadAnimation(entry));
 
   document.getElementById('pick-btn').addEventListener('click', async () => {
     const entry = await platform.pickModel();
