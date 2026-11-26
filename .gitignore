@@ -5,3 +5,4 @@ dist/
 models/*.vrm
 models/*.glb
 animations/*.vrma
+ai-live3d.log

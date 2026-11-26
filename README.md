@@ -7,6 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-10**（2026-11-26）
+  - 修复：**换动画后桌宠"消失"**——某动作 VRMA 数据在播放时抛异常，帧循环无保护导致 rAF 死亡（透明窗口内容空白 = 看不见桌宠），冻结实例又占着单实例锁使再次双击 bat 只唤醒不可见窗口。帧循环每一步加 try/catch：animator 出错自动丢弃 VRMA、`forceIdle()` 回手写待机（桌宠永不消失），rAF 无条件继续
+  - 修复：换动画前先 `setState('idle')` 中断正在播的反应动画，避免 mixer 替换后 animator 卡死在 REACTION 状态
+  - 新增日志落盘：renderer console / `render-process-gone` / `unresponsive` 写入 `ai-live3d.log`（项目根，不入 git）——bat 分离启动看不到 stdout，此后所有启动方式都可排查
 - **v1.0.261126-9**（2026-11-26）
   - **互动反应迁入 VRMA**：新增 `STATE.REACTION`，`VRMAPlayer` 支持单次反应 clip（`LoopOnce`，`loadReaction` 预加载 / `startReaction` 播放 / finished 事件自动回待机循环）。映射：**戳 → `surprise.vrma`（惊讶）、双击 → `hello.vrma`（挥手问好）**；素材缺失自动降级手写动画；反应播放期间手写层只叠加对应表情（surprised/happy）；摸头是持续状态，保持手写反馈
   - 新增 `start-pet.bat`：双击即启动桌宠（首次自动 npm install + 构建，之后直接启动）；`scripts/install-shortcut.ps1` 一键创建桌面快捷方式（已创建「AI Live3D Pet.lnk」）

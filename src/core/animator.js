@@ -119,6 +119,14 @@ export class Animator {
     this.setState(STATE.IDLE);
   }
 
+  /** Emergency reset after a render-loop error: hand-written idle pose. */
+  forceIdle() {
+    this.vrma = null;
+    this.reactionKind = null;
+    this.state = STATE.IDLE;
+    this.stateStart = this.now;
+  }
+
   poke() {
     if (this.startReaction('poked')) return;
     this.setState(STATE.POKED);

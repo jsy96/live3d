@@ -132,8 +132,25 @@ function createWindow() {
   win.setIgnoreMouseEvents(true);
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
+  // Renderer logs land in a file so failures are diagnosable no matter how
+  // the app was started (double-clicked bat has no visible stdout).
+  const LOG_FILE = path.join(__dirname, '..', 'ai-live3d.log');
+  const appendLog = (line) => {
+    try {
+      fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${line}\n`);
+    } catch {
+      // logging must never break the app
+    }
+  };
   win.webContents.on('console-message', (_event, _level, message) => {
     console.log(`[renderer] ${message}`);
+    appendLog(`[renderer] ${message}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    appendLog(`[render-process-gone] ${JSON.stringify(details)}`);
+  });
+  win.webContents.on('unresponsive', () => {
+    appendLog('[unresponsive] renderer became unresponsive');
   });
   win.on('closed', () => {
     win = null;

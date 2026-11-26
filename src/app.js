@@ -96,6 +96,9 @@ async function main() {
       pendingAnimation = entry;
       return;
     }
+    // Interrupt any playing reaction first: replacing the mixer mid-play
+    // would leave the animator stuck in the REACTION state forever.
+    animator?.setState('idle');
     try {
       if (!vrmaPlayer) vrmaPlayer = new VRMAPlayer();
       await vrmaPlayer.load(entry.url, currentVrm);
@@ -173,27 +176,45 @@ async function main() {
   });
 
   // Frame loop.
+  // Every step is guarded: one broken animation clip must never kill the
+  // rAF loop (the pet is a transparent window — a frozen canvas looks like
+  // the pet vanished). On animator errors we drop VRMA entirely and let the
+  // hand-written idle pose take over.
   let last = performance.now();
   let fpsAcc = 0;
   let fpsCount = 0;
   function frame(nowMs) {
     const dt = Math.min((nowMs - last) / 1000, 0.1);
     last = nowMs;
-    animator?.update(dt);
-    hitTester?.update(viewer.canvas, viewer.camera);
-    viewer.render();
-    updateInteractiveRegion();
-    if (isDebug) {
-      fpsAcc += dt;
-      fpsCount++;
-      if (fpsAcc >= 0.5) {
-        const fps = Math.round(fpsCount / fpsAcc);
-        fpsAcc = 0;
-        fpsCount = 0;
-        badge.textContent = `${version} · ${platform.isDesktop ? 'desktop' : 'web'} · ${fps} fps · ${animator ? animator.state : 'none'}`;
-      }
+    try {
+      animator?.update(dt);
+    } catch (err) {
+      console.error(`[ai-live3d] animator error (${animator?.state ?? '-'}): ${err?.message}`);
+      vrmaPlayer?.clear();
+      animator?.setVRMA(null);
+      animator?.forceIdle();
     }
+    try {
+      hitTester?.update(viewer.canvas, viewer.camera);
+      viewer.render();
+      updateInteractiveRegion();
+    } catch (err) {
+      console.error(`[ai-live3d] render error: ${err?.message}`);
+    }
+    updateDebugBadge(dt);
     requestAnimationFrame(frame);
+  }
+
+  function updateDebugBadge(dt) {
+    if (!isDebug) return;
+    fpsAcc += dt;
+    fpsCount++;
+    if (fpsAcc >= 0.5) {
+      const fps = Math.round(fpsCount / fpsAcc);
+      fpsAcc = 0;
+      fpsCount = 0;
+      badge.textContent = `${version} · ${platform.isDesktop ? 'desktop' : 'web'} · ${fps} fps · ${animator ? animator.state : 'none'}`;
+    }
   }
   requestAnimationFrame(frame);
 }
