@@ -1,4 +1,5 @@
 import { platform } from '../platform.js';
+import { A_POSE_ANGLE, applyAPose } from './pose.js';
 
 export const STATE = Object.freeze({
   IDLE: 'idle',
@@ -10,7 +11,6 @@ export const STATE = Object.freeze({
 
 // Normalized-bone Z rotation that lowers the arms from the VRM T-pose into a
 // relaxed A-pose (left arm positive, right arm negative). ~63 degrees.
-const A_POSE_ANGLE = 1.1;
 const POKE_DURATION = 0.5;
 const HAPPY_DURATION = 1.0;
 const PETTING_TIMEOUT = 0.45; // s without petting input before returning to idle
@@ -43,14 +43,15 @@ export class Animator {
     }
 
     // Base pose = A-pose; every frame starts from these values.
+    // IMPORTANT: apply the pose BEFORE capturing the base, otherwise the
+    // per-frame reset would restore the T-pose (arms stretched out).
+    applyAPose(vrm);
     this.base = {};
     for (const [name, node] of Object.entries(this.bones)) {
       this.base[name] = node
         ? { x: node.rotation.x, y: node.rotation.y, z: node.rotation.z }
         : { x: 0, y: 0, z: 0 };
     }
-    if (this.bones.leftUpperArm) this.bones.leftUpperArm.rotation.z = A_POSE_ANGLE;
-    if (this.bones.rightUpperArm) this.bones.rightUpperArm.rotation.z = -A_POSE_ANGLE;
     this.hipsBaseY = this.bones.hips ? this.bones.hips.position.y : 0;
 
     this.pointerNDC = { x: 0, y: 0 };
