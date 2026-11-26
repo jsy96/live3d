@@ -56,4 +56,24 @@ export class HitTester {
     if (dx * dx + dy * dy < 1) return 'body';
     return null;
   }
+
+  /**
+   * Window-relative bounding rect covering head circle + body ellipse.
+   * Sent to the main process, which uses it to toggle click-through.
+   * @returns {{x:number,y:number,w:number,h:number}|null}
+   */
+  getRegion() {
+    if (!this.valid) return null;
+    const left = Math.min(this.headScreen.x - this.headR, this.hipsScreen.x - this.bodyR * 0.95);
+    const right = Math.max(this.headScreen.x + this.headR, this.hipsScreen.x + this.bodyR * 0.95);
+    const top = Math.min(this.headScreen.y - this.headR, this.hipsScreen.y - this.bodyR * 1.5);
+    const bottom = Math.max(this.headScreen.y + this.headR, this.hipsScreen.y + this.bodyR * 1.5);
+    const pad = 12;
+    return {
+      x: Math.round(left - pad),
+      y: Math.round(top - pad),
+      w: Math.round(right - left + pad * 2),
+      h: Math.round(bottom - top + pad * 2),
+    };
+  }
 }

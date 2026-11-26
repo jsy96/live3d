@@ -17,11 +17,12 @@ export function createViewer(canvas) {
   camera.position.set(0, 1.2, 3.2);
 
   // three r155+ uses physically based light units by default; VRM MToon
-  // materials expect roughly PI-scaled intensities to look correct.
-  const sun = new THREE.DirectionalLight(0xffffff, Math.PI);
+  // materials expect roughly PI-scaled intensities. Keep ambient modest so
+  // model colors stay saturated (too much ambient washes them out).
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9 * Math.PI);
   sun.position.set(0.6, 1.0, 1.2);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55 * Math.PI));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35 * Math.PI));
 
   // Invisible object the VRM's eyes track; moved by setLookFromPointer().
   const lookTarget = new THREE.Object3D();

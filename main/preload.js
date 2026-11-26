@@ -8,7 +8,9 @@ contextBridge.exposeInMainWorld('live3d', {
   isDesktop: true,
   listModels: () => ipcRenderer.invoke('models:list'),
   pickModel: () => ipcRenderer.invoke('models:pick'),
-  setInteractive: (interactive) => ipcRenderer.send('hit:setInteractive', interactive),
+  // Window-relative bounding rect of the pet (or null); the main process
+  // polls the cursor against it to toggle click-through.
+  updateRegion: (region) => ipcRenderer.send('hit:updateRegion', region),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
   onModelChanged: (cb) => {
     ipcRenderer.on('models:changed', (_event, entry) => cb(entry));

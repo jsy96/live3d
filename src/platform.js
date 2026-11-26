@@ -24,9 +24,11 @@ export const platform = {
     return null;
   },
 
-  // Mouse pass-through only applies to the frameless transparent desktop window.
-  setInteractive(interactive) {
-    if (bridge) bridge.setInteractive(interactive);
+  // Window-relative bounding rect of the interactive area (pet model or
+  // setup panel), or null. Main process polls the cursor against it to
+  // toggle click-through; no-op in the browser.
+  updateRegion(region) {
+    if (bridge) bridge.updateRegion(region);
   },
 
   // Desktop: dragging the pet body moves the whole window.

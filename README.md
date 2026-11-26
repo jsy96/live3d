@@ -7,6 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-2**（2026-11-26）
+  - 修复：设置面板无法隐藏（`#panel` 的 ID 选择器特异性压过 `.hidden`，白色面板一直盖住模型）→ `.hidden` 加 `!important`
+  - 修复：点击/手势无反应 → 点击穿透判定从「renderer 依赖 `forward:true` 转发的 mousemove 切换」重构为「主进程 40ms 轮询 `screen.getCursorScreenPoint()` 对照模型包围矩形」（渲染层每帧经 `hit:updateRegion` 上报模型/面板的窗口相对矩形）
+  - 调整：环境光 0.55π → 0.35π、平行光 π → 0.9π，模型颜色不再泛白
 - **v1.0.261126-1**（2026-11-26）
   - 首个可运行版本：Electron 透明置顶无边框窗口 + 系统托盘
   - VRM 模型加载（`@pixiv/three-vrm` v3 + three r170+，自定义 `live3d-model://` 协议解决 renderer 无法 fetch `file://` 的问题）

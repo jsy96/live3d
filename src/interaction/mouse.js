@@ -11,7 +11,8 @@ const HEAD_STROKE_WINDOW_MS = 900; // path must accumulate within this window
  *   - drag the body     -> grabbed (window follows on desktop, model follows on web)
  *   - quick tap         -> poke (startled jump)
  *   - double click/tap  -> happy hop
- * Non-model areas stay click-through (desktop) so the pet never blocks the desk.
+ * Click-through is managed by the main process (cursor polling against the
+ * model's bounding rect), so this class only handles gesture recognition.
  */
 export class MouseInteractor {
   constructor(viewer, hitTester, animator, hooks = {}) {
@@ -28,7 +29,6 @@ export class MouseInteractor {
     this.lastScreenX = 0;
     this.lastScreenY = 0;
     this.dragMoved = 0;
-    this._interactive = null;
 
     // Head-stroke accumulator.
     this.stroke = 0;
@@ -39,10 +39,7 @@ export class MouseInteractor {
     this._onUp = (e) => this._up(e);
     this._onDbl = (e) => this._dbl(e);
     this._onLeave = () => {
-      if (!this.dragging) {
-        this._setInteractive(false);
-        document.body.classList.remove('grab');
-      }
+      document.body.classList.remove('grab');
     };
 
     const c = viewer.canvas;
@@ -60,14 +57,6 @@ export class MouseInteractor {
     c.removeEventListener('pointerleave', this._onLeave);
     window.removeEventListener('pointerup', this._onUp);
     c.removeEventListener('dblclick', this._onDbl);
-    this._setInteractive(false);
-  }
-
-  _setInteractive(v) {
-    if (this._interactive !== v) {
-      this._interactive = v;
-      platform.setInteractive(v);
-    }
   }
 
   _ndc(e) {
@@ -104,7 +93,6 @@ export class MouseInteractor {
     }
 
     const region = this.hit.hit(e.clientX, e.clientY);
-    this._setInteractive(!!region);
     document.body.classList.toggle('grab', region === 'body');
 
     if (region === 'head') {
@@ -127,7 +115,6 @@ export class MouseInteractor {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const region = this.hit.hit(e.clientX, e.clientY);
     if (!region) return;
-    this._setInteractive(true);
     this.downAt = performance.now();
     this.downX = e.clientX;
     this.downY = e.clientY;

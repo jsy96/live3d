@@ -72,9 +72,32 @@ async function main() {
     if (f) loadModel(URL.createObjectURL(f));
   });
 
-  // The setup panel must receive the pointer even though the window is click-through.
-  panel.addEventListener('pointerenter', () => platform.setInteractive(true));
-  panel.addEventListener('pointerleave', () => platform.setInteractive(false));
+  // While the setup panel is visible (no model), its rect keeps the window
+  // interactive so the buttons can be clicked (main-process cursor poll).
+  let lastRegion = null;
+  function regionEquals(a, b) {
+    if (!a || !b) return a === b;
+    return (
+      Math.abs(a.x - b.x) <= 2 &&
+      Math.abs(a.y - b.y) <= 2 &&
+      Math.abs(a.w - b.w) <= 2 &&
+      Math.abs(a.h - b.h) <= 2
+    );
+  }
+  function sendRegion(region) {
+    if (!regionEquals(region, lastRegion)) {
+      lastRegion = region;
+      platform.updateRegion(region);
+    }
+  }
+  function updateInteractiveRegion() {
+    let region = hitTester ? hitTester.getRegion() : null;
+    if (!region && !panel.classList.contains('hidden')) {
+      const r = panel.getBoundingClientRect();
+      region = { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
+    sendRegion(region);
+  }
 
   // Frame loop.
   let last = performance.now();
@@ -86,6 +109,7 @@ async function main() {
     animator?.update(dt);
     hitTester?.update(viewer.canvas, viewer.camera);
     viewer.render();
+    updateInteractiveRegion();
     if (isDebug) {
       fpsAcc += dt;
       fpsCount++;

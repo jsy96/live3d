@@ -107,5 +107,6 @@ body.grabbing {
 }
 
 .hidden {
-  display: none;
+  /* !important: ID selectors (#panel) outrank this class otherwise. */
+  display: none !important;
 }

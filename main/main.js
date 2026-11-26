@@ -31,6 +31,37 @@ function listModels() {
   }
 }
 
+// Click-through is decided HERE, not in the renderer: the main process polls
+// the cursor position against the model's on-screen bounding rect reported
+// via 'hit:updateRegion'. (forward:true mousemove forwarding is unreliable
+// for transparent windows on some Windows builds — clicks were being lost.)
+let petRegion = null; // {x, y, w, h} in window-relative CSS px, or null
+let clickThrough = true;
+
+function setClickThrough(v) {
+  if (clickThrough === v) return;
+  clickThrough = v;
+  if (win) win.setIgnoreMouseEvents(v);
+}
+
+function startCursorPoll() {
+  setInterval(() => {
+    if (!win) return;
+    if (!petRegion) {
+      setClickThrough(true);
+      return;
+    }
+    const p = screen.getCursorScreenPoint();
+    const [wx, wy] = win.getPosition(); // DIP, same units as renderer CSS px
+    const inside =
+      p.x >= wx + petRegion.x &&
+      p.x <= wx + petRegion.x + petRegion.w &&
+      p.y >= wy + petRegion.y &&
+      p.y <= wy + petRegion.y + petRegion.h;
+    setClickThrough(!inside);
+  }, 40);
+}
+
 let win = null;
 
 function pickModelDialog() {
@@ -71,9 +102,8 @@ function createWindow() {
   });
 
   win.setAlwaysOnTop(true, 'screen-saver');
-  // Click-through by default; the renderer flips this on when the pointer
-  // is over the model (see src/platform.js -> setInteractive).
-  win.setIgnoreMouseEvents(true, { forward: true });
+  // Click-through by default; startCursorPoll() flips it based on cursor pos.
+  win.setIgnoreMouseEvents(true);
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
   win.webContents.on('console-message', (_event, _level, message) => {
@@ -93,9 +123,9 @@ function registerIpc() {
     return result.canceled ? null : toModelEntry(result.filePaths[0]);
   });
 
-  ipcMain.on('hit:setInteractive', (_event, interactive) => {
-    if (!win) return;
-    win.setIgnoreMouseEvents(!interactive, { forward: true });
+  ipcMain.on('hit:updateRegion', (_event, region) => {
+    petRegion = region;
+    if (!region) setClickThrough(true);
   });
 
   ipcMain.on('win:moveBy', (_event, dx, dy) => {
@@ -128,6 +158,7 @@ if (!gotLock) {
 
     registerIpc();
     createWindow();
+    startCursorPoll();
 
     createTray(
       () => win,
