@@ -72,6 +72,21 @@ export const platform = {
     if (bridge) bridge.onPlayOnce(cb);
   },
 
+  // Camera motion capture: main process owns the requested state (menu /
+  // CLI / badge all go through it), renderer reports the actual state.
+  onMocapChanged(cb) {
+    if (bridge) bridge.onMocapChanged(cb);
+  },
+  onMocapMirror(cb) {
+    if (bridge) bridge.onMocapMirror(cb);
+  },
+  requestMocap(enabled) {
+    if (bridge) bridge.requestMocap(enabled);
+  },
+  reportMocapState(active) {
+    if (bridge) bridge.reportMocapState(active);
+  },
+
   // Renderer startup finished; lets the main process flush queued CLI commands.
   ready() {
     if (bridge) bridge.ready();

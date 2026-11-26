@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, protocol, net, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, session, protocol, net, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -76,6 +76,15 @@ function startCursorPoll() {
 let win = null;
 let currentModelPath = null;
 let currentAnimationPath = null;
+// Camera mocap: the renderer reports the ACTUAL state (camera start can
+// fail); menu / CLI / badge requests are relayed through setMocap().
+let mocapActive = false;
+let mocapMirror = true;
+
+/** Ask the renderer to start/stop webcam pose tracking. */
+function setMocap(enabled) {
+  win?.webContents.send('mocap:set', !!enabled);
+}
 
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
 function setModel(entry) {
@@ -193,6 +202,14 @@ function registerIpc() {
   ipcMain.on('app:toggleDevTools', () => win?.webContents.toggleDevTools());
   ipcMain.on('app:quit', () => app.quit());
 
+  // Camera mocap state bridge (see mocapActive comment above).
+  ipcMain.on('mocap:state', (_event, active) => {
+    mocapActive = !!active;
+  });
+  ipcMain.on('mocap:request', (_event, enabled) => {
+    setMocap(!!enabled);
+  });
+
   // Renderer reports which model it actually loaded (start-up picks models[0]).
   ipcMain.on('models:current', (_event, modelPath) => {
     currentModelPath = modelPath;
@@ -243,6 +260,24 @@ function registerIpc() {
     }
     template.push({ type: 'separator' });
 
+    // Camera mocap: webcam pose tracking drives the pet's body.
+    // Checked state = actual tracking state reported by the renderer.
+    template.push({
+      label: 'Camera Mocap',
+      type: 'checkbox',
+      checked: mocapActive,
+      click: () => setMocap(!mocapActive),
+    });
+    template.push({
+      label: 'Mirror Mode',
+      type: 'checkbox',
+      checked: mocapMirror,
+      click: () => {
+        mocapMirror = !mocapMirror;
+        win?.webContents.send('mocap:mirror', mocapMirror);
+      },
+    });
+
     // Facing is wheel-controlled only (hover + scroll steps 45 degrees);
     // the old five-entry menu block was removed as redundant.
 
@@ -278,6 +313,7 @@ function registerIpc() {
 //   --animation <name|none>    switch idle animation ("none" = hand-written)
 //   --play <name>              play a clip from animations/ once, then idle
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
+//   --mocap <on|off|toggle>    webcam body tracking on / off / flip state
 const PLAY_ALIASES = {
   poke: 'surprise',
   poked: 'surprise',
@@ -319,6 +355,7 @@ function parseCliArgs(argv) {
     animation: undefined,
     play: null,
     facing: null,
+    mocap: null,
     hide: false,
     devtools: false,
     quit: false,
@@ -338,6 +375,7 @@ function parseCliArgs(argv) {
     '--play': 'play',
     '--reaction': 'play',
     '--facing': 'facing',
+    '--mocap': 'mocap',
   };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
@@ -382,6 +420,7 @@ function dispatchCli(argv, source) {
     cmds.animation !== undefined ||
     cmds.play != null ||
     cmds.facing != null ||
+    cmds.mocap != null ||
     cmds.devtools ||
     cmds.hide;
   if (cmds.hide) win?.hide();
@@ -417,6 +456,11 @@ function sendCliToRenderer(cmds) {
     }
   }
   if (Number.isFinite(cmds.facing)) setFacing(cmds.facing);
+  if (cmds.mocap != null) {
+    if (/^(1|on|y|yes|true|start)$/i.test(cmds.mocap)) setMocap(true);
+    else if (/^(0|off|n|no|false|stop)$/i.test(cmds.mocap)) setMocap(false);
+    else setMocap(!mocapActive); // 'toggle' or any other value flips
+  }
   if (cmds.play != null) {
     const alias = PLAY_ALIASES[String(cmds.play).toLowerCase()];
     const entry = resolveEntry(listAnimations(), alias ?? cmds.play);
@@ -435,9 +479,20 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     protocol.handle(MODEL_SCHEME, (request) => {
-      const absPath = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
-      return net.fetch(pathToFileURL(absPath).toString());
+      let p = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
+      // '$app/<relative>' resolves against the app root: the renderer does
+      // not know absolute paths, and bundled assets (e.g. the MediaPipe pose
+      // model) need fetch-able URLs just like user models do.
+      if (p.startsWith('$app/')) p = path.join(__dirname, '..', p.slice('$app/'.length));
+      return net.fetch(pathToFileURL(path.resolve(p)).toString());
     });
+
+    // Camera access for the mocap feature: auto-grant media (the pet window
+    // has no UI to show Chromium's own prompt), deny everything else.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === 'media');
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
 
     registerIpc();
     createWindow();

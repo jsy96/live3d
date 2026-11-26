@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld('live3d', {
   onPlayOnce: (cb) => {
     ipcRenderer.on('animations:playOnce', (_event, entry) => cb(entry));
   },
+  // Camera motion capture (webcam pose tracking drives the model).
+  // Main process is the single source of truth for the REQUESTED state
+  // (menu / CLI / badge all send requests); the renderer reports the ACTUAL
+  // state back (camera start can fail).
+  onMocapChanged: (cb) => {
+    ipcRenderer.on('mocap:set', (_event, enabled) => cb(enabled));
+  },
+  onMocapMirror: (cb) => {
+    ipcRenderer.on('mocap:mirror', (_event, on) => cb(on));
+  },
+  requestMocap: (enabled) => ipcRenderer.send('mocap:request', enabled),
+  reportMocapState: (active) => ipcRenderer.send('mocap:state', active),
   // Renderer startup finished; the main process flushes queued CLI commands.
   ready: () => ipcRenderer.send('app:ready'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),

@@ -3,10 +3,18 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261126-18**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261126-19**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261126-19**（2026-11-26）
+  - **摄像头身体动捕（Camera Mocap）**：桌宠实时模仿摄像头前你的身体动作——躯干倾斜、头颈转动、双臂/手肘、双腿/膝盖（可见时）逐段跟随， hips 高度经站立基准校准后整体下沉/上移（蹲下/起跳）。新增 `src/core/mocap.js`（~450 行）：MediaPipe `PoseLandmarker`（`@mediapipe/tasks-vision` 1.2.3，GPU delegate 失败自动回退 CPU）跑 VIDEO 模式，取 `worldLandmarks`（米制 3D 关节点）→ EMA 平滑 → 映射进 VRM 场景空间（**镜像模式**默认开：桌宠 = 你的镜面影像；右键菜单 `Mirror Mode` 可切同侧模仿）
+  - **重定向解算器（aim solver）**：不依赖 Kalidokit，方向约定全部从实际骨架测量——attach 时按 normalized 骨架的 T-pose 静息位置计算每根骨骼的静息指向，每帧用「父级当前坐标系下 setFromUnitVectors(静息方向 → 追踪方向)」逐骨骼解算（按层级顺序累积父级旋转，与 A_POSE 手臂正负号等经验约定无关）；躯干倾角按同一场景轴拆 35/35/30 分配到 hips/spine/chest（同轴分角精确合成，总倾角钳制 0.5 rad）；头部用完整正交基（Y=颈向、Z=鼻-耳中点面朝向）捕捉偏航/俯仰/侧倾；四肢逐段独立 cap（臂 2.7 / 腿 1.35 / 颈 0.55 rad）；关键点可见度 <0.55 的肢体按置信度淡出到自然下垂，不冻结
+  - **资源与加载路径**：`assets/mediapipe/`（`wasm/vision_wasm_internal.{js,wasm}` + `pose_landmarker_full.task` 9.4MB，从 storage.googleapis.com 断点续传下载，入 git）；wasm loader 走相对 file:// URL（`<script>` 同源加载），.task 模型走 `live3d-model://` 协议（新增 `$app/` 前缀按应用根解析相对路径，renderer 不必知道绝对路径）；CSP `script-src` 增 `'wasm-unsafe-eval'`、新增 `media-src`；主进程 `setPermissionRequestHandler/CheckHandler` 自动放行 `media` 权限（透明窗口没有 Chromium 原生提示 UI）
+  - **与动画系统互斥整合**：`Animator` 新增动捕独占分支（眨眼层保留叠加），`beginMocap()/endMocap()` 干净进出（打断反应动画、VRMA 停止/淡入恢复——`VRMAPlayer.play()` 改为 fadeIn 起播消除姿态跳变）；动捕期间 poke/双击欢呼/摸头/`--play`/换待机动画全部让位不抢骨骼，拖拽移动窗口仍可用（动捕跟随不受影响）；换模型自动重建动捕 rig（`mocap.attach(vrm)`）持续跟踪
+  - **控制入口三合一**：右键菜单新增 `Camera Mocap`（勾选 = 实际运行态）+ `Mirror Mode`；CLI `--mocap <on|off|toggle>`（复用 second-instance 通道）；窗口右上角红色「🎥 动捕中」徽标（点击关闭，已并入点击穿透交互区域）。摄像头启动失败（无摄像头/权限拒绝）弹面板提示 6 秒自动隐藏并回报关闭态
+  - **解算器数学自测**：`scripts/test-mocap-solver.mjs`（`npm run test:mocap`，esbuild 转 ESM 后 node 运行）——合成 T-pose 骨架 + 注入合成关节点，断言每根驱动骨骼的**世界指向**收敛到追踪向量：T-pose/举臂 45°/手臂前伸/躯干倾斜合成/头部偏航 10 项全部通过（误差 ≤0.1°，躯干首跑失败为测试数据构造错误，修正后 0.0°）
+  - 实测：`electron . --mocap on` 冷启动全链路通过（argv 抗重排解析 → 摄像头 640×480 → wasm+模型加载 → GPU delegate → `tracking started`），`--quit` 干净退出无渲染层报错；动作跟随质量需真人上镜验收（1.5m 画幅、上半身入镜即可，腿不可见时自动下垂）
 - **v1.0.261126-18**（2026-11-26）
   - **便携包分发**：新增 `scripts\make-portable.bat`——构建 renderer → 暂存精简运行时（主进程只依赖 electron 自带 Node，`three`/`@pixiv/*` 已打进 `dist/bundle.js`，运行时仅需 `node_modules\electron\dist` 二进制）→ Compress-Archive 压缩，产出 `dist\ai-live3d-portable-<版本>.zip`（实测 174MB）。**收件人无需安装 Node.js，解压双击 `start-pet.bat` 即用**，CLI 遥控命令同样可用；已按「清空 PATH 模拟无 Node 机器」实测：冷启动、`--play`、`--quit` 全通过。注意：便携包与本仓库实例同名 `ai-live3d`，同机同时只能跑一个（单实例锁互抢）；zip 含第三方模型/动画素材，公开分发前需确认素材许可（VRoid/pixiv 示例模型、SillyTavern 生态动捕转换件）
   - 默认待机动画改为 `dance_2.vrma`（`DEFAULT_ANIMATION` 常量，文件缺失时回退 `animations/` 排序第一个）
@@ -88,6 +96,7 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 一期 | 待机动画（呼吸/眨眼/视线跟随/歪头） | ✅ 已实现 |
 | 一期 | 透明置顶 + 点击穿透 + 托盘控制 | ✅ 已实现 |
 | 一期 | VRMA 待机动画（VRM Animation 标准格式，互斥混合） | ✅ 已实现 |
+| 二期 | **摄像头身体动捕**（MediaPipe Pose：桌宠实时模仿你的身体动作） | ✅ 已实现 |
 | 二期 | 摄像头手势识别（MediaPipe Hands：挥手/比心/隔空摸头） | 预留接口 |
 | 三期 | AI 对话（LLM 回复 + 情绪驱动表情 + 口型同步） | 预留接口 |
 | 四期 | 电脑 ↔ 手机漫游（局域网网页端 + 宠物迁移动画） | 预留接口 |
@@ -116,8 +125,9 @@ ai-live3d/
 │   ├── platform.js          # 平台适配层：Electron 桥 vs 浏览器降级
 │   ├── core/
 │   │   ├── viewer.js        # Three.js 场景/相机自动取景/VRM 加载
-│   │   ├── animator.js      # 动画状态机（idle/petting/grabbed/poked/happy）
+│   │   ├── animator.js      # 动画状态机（idle/petting/grabbed/poked/happy + 动捕独占分支）
 │   │   ├── vrma.js          # VRMA 待机动画播放器（three-vrm-animation）
+│   │   ├── mocap.js         # 摄像头动捕：MediaPipe Pose + aim 重定向解算器
 │   │   ├── pose.js          # 共享 A-pose 常量与应用
 │   │   └── expression.js    # 表情缓动混合器（含口型接口）
 │   ├── interaction/
@@ -128,9 +138,10 @@ ai-live3d/
 │   └── sync/roaming.js      # 四期接口：设备间漫游协议
 ├── models/                  # 放 .vrm 模型（见 models/README.md，不入 git）
 ├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
-├── assets/                  # icon.png / tray.png（脚本生成）
+├── assets/                  # icon.png / tray.png + mediapipe/（动捕 wasm+模型，入 git）
 ├── .claude/skills/live3d-pet/SKILL.md  # Claude Code 遥控 skill（命令行通道）
 ├── scripts/gen_icon.py      # 图标生成脚本
+├── scripts/test-mocap-solver.mjs # 动捕解算器数学自测（npm run test:mocap）
 ├── scripts/make-portable.bat # 便携 zip 打包（无需 Node 的分发包）
 ├── dist/bundle.js           # esbuild 产物（不入 git，npm start 自动构建）
 └── package.json
@@ -155,6 +166,7 @@ npm start     # 构建 renderer + 启动桌宠
    - **戳**：快速点击（<300ms 且移动 <6px）→ 受惊弹跳
    - **双击**：欢呼跳跃 + 挥手
    - 模型以外区域鼠标完全穿透，不影响正常使用电脑
+4. **摄像头动捕（身体模仿）**：右键菜单勾选 `Camera Mocap`（或 CLI `--mocap on`），站到摄像头前上半身入镜即可——躯干/头颈/手臂逐段实时模仿，蹲下整体下沉；右上角红色「🎥 动捕中」徽标点击关闭；`Mirror Mode` 勾选切换镜面模仿（默认）与同侧模仿。动捕期间动作类互动与 `--play` 自动让位，拖拽移动窗口不受影响
 3. 托盘图标：换模型 / 显示隐藏 / DevTools / 退出
 4. 调试：`electron . --args --` 后在 URL 加 `?debug=1`（或托盘菜单 Open DevTools）显示版本/FPS/状态角标
 
@@ -169,6 +181,7 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 ./start-pet.bat --animation none    # 切换常驻待机动画（none=手写待机）
 ./start-pet.bat --model AvatarSample_B
 ./start-pet.bat --facing 90         # 转身（0/45/90/135/180）
+./start-pet.bat --mocap on          # 摄像头身体动捕（off 关，toggle 翻转）
 ./start-pet.bat --hide              # 隐藏（--show 显示，--quit 退出）
 ```
 
@@ -190,6 +203,13 @@ scripts/make-portable.bat    # 产出 dist/ai-live3d-portable-<版本>.zip（约
 
 ## 路线图
 
-1. **二期**：MediaPipe Hands 摄像头手势（`src/hand-tracking.js` 已定 GESTURE 契约：挥手→开心、隔空摸头→petting、比心→开心+气泡、指点→视线跟随）
+1. **二期**：~~摄像头身体动捕~~（✅ v1.0.261126-19 已实现，`src/core/mocap.js`）；MediaPipe Hands 摄像头手势（`src/hand-tracking.js` 已定 GESTURE 契约：挥手→开心、隔空摸头→petting、比心→开心+气泡、指点→视线跟随）
 2. **三期**：AI 对话（`src/ai/chat-provider.js` 已定契约：`send(text) → { reply, emotion }`，情绪映射到 VRM 表情，`speak()` 驱动口型；API Key 走环境变量）
 3. **四期**：电脑 ↔ 手机漫游（`src/sync/roaming.js` 已定协议：桌面端起局域网 HTTP+WebSocket 服务，手机浏览器打开同一 renderer bundle，`PET_TRANSFER` 事件做宠物状态迁移 + 跑出/跑进动画）
+
+## 摄像头动捕补充说明
+
+- 资源位置：`assets/mediapipe/`（wasm 运行时 + `pose_landmarker_full.task`，均已入 git，便携包自动携带）。模型官方源：`https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker/full/float16/latest/pose_landmarker_full.task`（国内直连慢但可断点续传，`curl -C -` 重试即可）
+- 使用建议：距摄像头 1~2m、上半身完整入镜效果最佳；腿出镜时自动下垂不冻结；头部转动幅度大时（>49°）被钳制以防颈部扭断观感
+- 已知取舍：上臂无扭转量（twist）解算，肘部朝向极端姿势下可能略歪——如需更高质量可后续引入 Kalidokit 或手部 21 关键点细化
+- 隐私：画面仅在本地 wasm 推理，不上传任何数据；关闭动捕立即停止摄像头（`stream.getTracks().stop()`）

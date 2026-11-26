@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' live3d-model: blob: data:;"
+    content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' live3d-model: blob: data:;"
   />
   <title>AI Live3D</title>
   <link rel="stylesheet" href="styles.css" />
@@ -24,6 +24,7 @@
   </div>
 
   <div id="bubble" class="hidden"></div>
+  <div id="mocap-badge" class="hidden" title="摄像头动捕进行中，点击关闭">🎥 动捕中</div>
   <div id="debug-badge" class="hidden"></div>
 
   <script type="module" src="../dist/bundle.js"></script>
