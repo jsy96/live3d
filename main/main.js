@@ -243,18 +243,8 @@ function registerIpc() {
     }
     template.push({ type: 'separator' });
 
-    // Turntable facing (scroll wheel also steps these).
-    template.push({ label: 'Facing', enabled: false });
-    for (const [label, deg] of [
-      ['Front', 0],
-      ['Three-quarter', 45],
-      ['Side', 90],
-      ['Back three-quarter', 135],
-      ['Back', 180],
-    ]) {
-      template.push({ label, click: () => setFacing(deg) });
-    }
-    template.push({ type: 'separator' });
+    // Facing is wheel-controlled only (hover + scroll steps 45 degrees);
+    // the old five-entry menu block was removed as redundant.
 
     template.push({
       label: 'Open file...',

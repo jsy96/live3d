@@ -79,8 +79,10 @@ async function main() {
     }
   }
 
-  // Idle animation (VRMA): default to the first file; applied once a model is loaded.
+  // Idle animation (VRMA): default clip by file name (falls back to the first
+  // file in animations/ when absent); applied once a model is loaded.
   // Interaction reactions map to VRMA clips by file name when present.
+  const DEFAULT_ANIMATION = 'dance_2.vrma';
   const REACTION_CLIPS = { poked: 'surprise.vrma', happy: 'hello.vrma' };
   let animMap = new Map();
   let pendingPlay = null; // CLI --play that arrived before a model was ready
@@ -203,7 +205,7 @@ async function main() {
   animMap = new Map(
     anims.map((a) => [a.path.split(/[\\/]/).pop().toLowerCase(), a])
   );
-  pendingAnimation = anims.length > 0 ? anims[0] : null;
+  pendingAnimation = anims.length > 0 ? (animMap.get(DEFAULT_ANIMATION) ?? anims[0]) : null;
   const models = await platform.listModels();
   if (models.length > 0) {
     await loadModel(models[0]);

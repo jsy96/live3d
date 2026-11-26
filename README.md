@@ -3,10 +3,15 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261126-17**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261126-18**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261126-18**（2026-11-26）
+  - **便携包分发**：新增 `scripts\make-portable.bat`——构建 renderer → 暂存精简运行时（主进程只依赖 electron 自带 Node，`three`/`@pixiv/*` 已打进 `dist/bundle.js`，运行时仅需 `node_modules\electron\dist` 二进制）→ Compress-Archive 压缩，产出 `dist\ai-live3d-portable-<版本>.zip`（实测 174MB）。**收件人无需安装 Node.js，解压双击 `start-pet.bat` 即用**，CLI 遥控命令同样可用；已按「清空 PATH 模拟无 Node 机器」实测：冷启动、`--play`、`--quit` 全通过。注意：便携包与本仓库实例同名 `ai-live3d`，同机同时只能跑一个（单实例锁互抢）；zip 含第三方模型/动画素材，公开分发前需确认素材许可（VRoid/pixiv 示例模型、SillyTavern 生态动捕转换件）
+  - 默认待机动画改为 `dance_2.vrma`（`DEFAULT_ANIMATION` 常量，文件缺失时回退 `animations/` 排序第一个）
+  - 右键菜单移除 `Facing` 区块（滚轮悬停转向已覆盖该功能，五档菜单冗余）；CLI `--facing` 命令保留
+  - 打包脚本坑位记录：`findstr "APP_VERSION"` 会同时命中 `module.exports = { APP_VERSION }` 行，`for /f` 第二次迭代把版本号覆盖成 `{ APP_VERSION }` 字面量——改 `findstr /b /c:"const APP_VERSION"` 行首锚定修复
 - **v1.0.261126-17**（2026-11-26）
   - **命令行遥控通道（CLI remote control）**：利用单实例机制把「再次启动的 argv」变成遥控命令——`second-instance` 事件携带的 argv 经 `parseCliArgs` 解析后转发（首启参数排队到渲染层 `app:ready` 再投递，消除竞态）。命令集：`--show` / `--hide` / `--quit` / `--devtools` / `--model <名称或绝对路径>` / `--animation <名称|none>` / `--play <名称>`（单次播放任意 VRMA，播完回待机）/ `--facing <角度>`；名称匹配规则 = 去扩展名忽略大小写，先精确后子串；`--play` 别名 poke/surprise→surprise.vrma、hello/happy→hello.vrma；所有命令（含原始 argv）与匹配失败均落日志 `[cmd]`
   - **argv 抗重排解析**：实测 second-instance 的 argv 会被 chromium 重排（`registerSchemesAsPrivileged` 触发进程重拉，`--play surprise` 被拆成无值开关 + 插入 `--allow-file-access-from-files`/`--secure-scheme=...` 等噪声 + `surprise` 降级为位置参数）。解析器按「跳过噪声开关与 exe/app 路径 + 孤儿位置参数 FIFO 配给等待取值的开关」还原（chromium 两侧各自保序，FIFO 配对精确重建），多开关组合（`--play x --facing 90`）实测正确
@@ -126,6 +131,7 @@ ai-live3d/
 ├── assets/                  # icon.png / tray.png（脚本生成）
 ├── .claude/skills/live3d-pet/SKILL.md  # Claude Code 遥控 skill（命令行通道）
 ├── scripts/gen_icon.py      # 图标生成脚本
+├── scripts/make-portable.bat # 便携 zip 打包（无需 Node 的分发包）
 ├── dist/bundle.js           # esbuild 产物（不入 git，npm start 自动构建）
 └── package.json
 ```
@@ -167,6 +173,14 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 ```
 
 名称匹配：去扩展名忽略大小写，先精确后子串；`--play` 支持 `poke/surprise`、`hello/happy` 等别名；多命令可组合（`--play hello --facing 90`）。命令回执（含原始 argv）与匹配失败都写入 `ai-live3d.log` 的 `[cmd]` 行。配套 **Claude Code skill** `.claude/skills/live3d-pet/SKILL.md`：装了 Claude Code 的会话里直接说「让桌宠跳个舞」即可遥控。
+
+### 打包发给别人（便携 zip）
+
+```bash
+scripts/make-portable.bat    # 产出 dist/ai-live3d-portable-<版本>.zip（约 174MB）
+```
+
+对方**无需安装 Node.js**：解压后双击 `start-pet.bat` 即用（运行时只带 electron 二进制，renderer 已是预构建单文件 bundle），CLI 遥控命令同样可用。注意：公开分发前请确认 `models/`、`animations/` 内第三方素材的再分发许可。
 
 ## 开发
 
