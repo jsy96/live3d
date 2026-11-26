@@ -67,6 +67,16 @@ export const platform = {
     if (bridge) bridge.onFacingChanged(cb);
   },
 
+  // Desktop only: one-shot clip from the CLI channel (--play).
+  onPlayOnce(cb) {
+    if (bridge) bridge.onPlayOnce(cb);
+  },
+
+  // Renderer startup finished; lets the main process flush queued CLI commands.
+  ready() {
+    if (bridge) bridge.ready();
+  },
+
   async getAppVersion() {
     if (bridge) return bridge.getAppVersion();
     return 'web';

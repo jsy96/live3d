@@ -61,12 +61,17 @@ async function main() {
       }
       // Re-bind the VRMA clip to the new model if one was already chosen.
       currentVrm = vrm;
-      if (vrmaPlayer?.ready) vrmaPlayer.rebind(vrm);
+      vrmaPlayer?.rebind(vrm);
       console.log('[ai-live3d] model loaded');
       if (pendingAnimation !== undefined) {
         const e = pendingAnimation;
         pendingAnimation = undefined;
         await loadAnimation(e);
+      }
+      if (pendingPlay) {
+        const e = pendingPlay;
+        pendingPlay = null;
+        playOnce(e);
       }
     } catch (err) {
       console.error(`[ai-live3d] model load failed: ${err.message}`);
@@ -78,6 +83,30 @@ async function main() {
   // Interaction reactions map to VRMA clips by file name when present.
   const REACTION_CLIPS = { poked: 'surprise.vrma', happy: 'hello.vrma' };
   let animMap = new Map();
+  let pendingPlay = null; // CLI --play that arrived before a model was ready
+
+  /**
+   * One-shot clip from the CLI channel (start-pet.bat --play / skill): load
+   * it as a 'skill' reaction, play it once, then the idle loop resumes.
+   * kind 'skill' overlays no forced facial expression.
+   */
+  async function playOnce(entry) {
+    if (!currentVrm || !animator) {
+      pendingPlay = entry;
+      return;
+    }
+    pendingPlay = null;
+    try {
+      if (!vrmaPlayer) vrmaPlayer = new VRMAPlayer();
+      await vrmaPlayer.loadReaction('skill', entry.url, currentVrm);
+      // (Re)link: a model switch recreated the animator with vrma unset.
+      animator.setVRMA(vrmaPlayer);
+      animator.startReaction('skill');
+      console.log(`[ai-live3d] play-once: ${entry.path}`);
+    } catch (err) {
+      console.error(`[ai-live3d] play-once failed: ${err.message}`);
+    }
+  }
 
   async function loadReactionClips() {
     if (!currentVrm || !vrmaPlayer?.ready) return;
@@ -186,6 +215,9 @@ async function main() {
   platform.onModelChanged((entry) => loadModel(entry));
   platform.onAnimationChanged((entry) => loadAnimation(entry));
   platform.onFacingChanged((deg) => viewer.setFacing(deg));
+  platform.onPlayOnce(playOnce);
+  // Startup done: the main process can now deliver queued CLI commands.
+  platform.ready();
 
   document.getElementById('pick-btn').addEventListener('click', async () => {
     const entry = await platform.pickModel();

@@ -56,9 +56,8 @@ export class VRMAPlayer {
   async loadReaction(kind, url, vrm) {
     const animation = await this._loadVRMA(url);
     this.reactions.set(kind, { animation, action: null });
-    if (this.mixer) {
-      this._buildReactionAction(kind, vrm);
-    }
+    if (!this.mixer) this.rebind(vrm);
+    else this._buildReactionAction(kind, vrm);
   }
 
   async _loadVRMA(url) {
@@ -72,16 +71,21 @@ export class VRMAPlayer {
     return animation;
   }
 
-  /** Re-create all clips against a (new) VRM without re-downloading files. */
+  /**
+   * Re-create all clips against a (new) VRM without re-downloading files.
+   * Safe with no idle clip loaded (reaction-only player, e.g. idle "(None)"
+   * + a CLI --play): the mixer still exists so one-shot reactions can play.
+   */
   rebind(vrm) {
     this._disposeMixer();
-    if (!this.idleAnimation) return;
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.mixer.addEventListener('finished', (e) => this._onMixerFinished(e));
-    const clip = createVRMAnimationClip(this.idleAnimation, vrm);
-    this.idleHipsTrack = this._extractHipsHeight(clip);
-    this.action = this.mixer.clipAction(clip);
-    this.action.play();
+    if (this.idleAnimation) {
+      const clip = createVRMAnimationClip(this.idleAnimation, vrm);
+      this.idleHipsTrack = this._extractHipsHeight(clip);
+      this.action = this.mixer.clipAction(clip);
+      this.action.play();
+    }
     for (const kind of [...this.reactions.keys()]) {
       this._buildReactionAction(kind, vrm);
     }

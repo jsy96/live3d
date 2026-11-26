@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('live3d', {
   onFacingChanged: (cb) => {
     ipcRenderer.on('facing:set', (_event, deg) => cb(deg));
   },
+  // One-shot clip chosen via the CLI channel (--play): play once, then the
+  // idle loop resumes.
+  onPlayOnce: (cb) => {
+    ipcRenderer.on('animations:playOnce', (_event, entry) => cb(entry));
+  },
+  // Renderer startup finished; the main process flushes queued CLI commands.
+  ready: () => ipcRenderer.send('app:ready'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
   onModelChanged: (cb) => {
     ipcRenderer.on('models:changed', (_event, entry) => cb(entry));

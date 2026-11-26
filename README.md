@@ -3,10 +3,17 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261126-1**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261126-17**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261126-17**（2026-11-26）
+  - **命令行遥控通道（CLI remote control）**：利用单实例机制把「再次启动的 argv」变成遥控命令——`second-instance` 事件携带的 argv 经 `parseCliArgs` 解析后转发（首启参数排队到渲染层 `app:ready` 再投递，消除竞态）。命令集：`--show` / `--hide` / `--quit` / `--devtools` / `--model <名称或绝对路径>` / `--animation <名称|none>` / `--play <名称>`（单次播放任意 VRMA，播完回待机）/ `--facing <角度>`；名称匹配规则 = 去扩展名忽略大小写，先精确后子串；`--play` 别名 poke/surprise→surprise.vrma、hello/happy→hello.vrma；所有命令（含原始 argv）与匹配失败均落日志 `[cmd]`
+  - **argv 抗重排解析**：实测 second-instance 的 argv 会被 chromium 重排（`registerSchemesAsPrivileged` 触发进程重拉，`--play surprise` 被拆成无值开关 + 插入 `--allow-file-access-from-files`/`--secure-scheme=...` 等噪声 + `surprise` 降级为位置参数）。解析器按「跳过噪声开关与 exe/app 路径 + 孤儿位置参数 FIFO 配给等待取值的开关」还原（chromium 两侧各自保序，FIFO 配对精确重建），多开关组合（`--play x --facing 90`）实测正确
+  - `VRMAPlayer` 支持无待机动画的反应专用模式：`loadReaction` 无 mixer 时自动 `rebind`，`rebind` 不再因无 idle 提前返回（mixer 始终建立）——`(None)` 手写待机下 `--play` 也能用；`app.js` 换模型时对 reaction-only 播放器同样重绑
+  - renderer 新增 `animations:playOnce` IPC（`playOnce`：以 `skill` kind 装载单次 clip、`setVRMA` 重联动画状态机、模型未就绪时排队）与 `app:ready` 信号；`start-pet.bat` 透传 `%*` 参数
+  - 新增 Claude Code skill：`.claude/skills/live3d-pet/SKILL.md`——会话里说「让桌宠跳个舞/打个招呼/换个模型」即可通过本通道遥控桌宠（含命令表、匹配规则、日志验证与排错）
+  - 实测：冷启动多开关（`--play surprise --facing 90`）、second-instance 全命令集（scrambled argv 还原）、换模型后 `--play`（animator 重联）、`--quit` 干净退出，全部通过
 - **v1.0.261126-16**（2026-11-26）
   - ** hips 高度机制重构（治本）**：读 three-vrm-animation 源码确认 VRMA hips 轨道语义为「绝对高度 × (目标restY/动画restY) 直接写入 hips 骨骼」，但 mixer 的属性绑定与 normalized 机制组合下行为混乱（实测待机时 hips 被压到 0.296m、反应动画恢复 0.896m——点击瞬间上移 0.6m 即「突然站立+上移」的真相）。重构：`VRMAPlayer._extractHipsHeight` 把 hips 位移轨道从 clip 中摘除（mixer 不再写 hips 骨骼），高度数据经「首帧归零 + 漂移钳制」后由 Animator 每帧采样、以 **`vrm.scene.position.y` 整体平移**跟随（阻尼 6/s）——坐下整体下沉、跳起整体上移、脚与地面相对关系保持，所有状态同一阻尼通道零跳变
   - 待机循环不参与高度跟随（实测 ChatVRM idle_loop 的 hips 轨道含深度下蹲段且语义不一致，恒定贴钳制下界）；只有反应动画采样高度
@@ -117,6 +124,7 @@ ai-live3d/
 ├── models/                  # 放 .vrm 模型（见 models/README.md，不入 git）
 ├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
 ├── assets/                  # icon.png / tray.png（脚本生成）
+├── .claude/skills/live3d-pet/SKILL.md  # Claude Code 遥控 skill（命令行通道）
 ├── scripts/gen_icon.py      # 图标生成脚本
 ├── dist/bundle.js           # esbuild 产物（不入 git，npm start 自动构建）
 └── package.json
@@ -144,7 +152,21 @@ npm start     # 构建 renderer + 启动桌宠
 3. 托盘图标：换模型 / 显示隐藏 / DevTools / 退出
 4. 调试：`electron . --args --` 后在 URL 加 `?debug=1`（或托盘菜单 Open DevTools）显示版本/FPS/状态角标
 
-> 注意：拖拽用屏幕坐标计算窗口位移，快速点击判定 300ms/6px 阈值；点击穿透切换由 renderer 命中判定驱动（`hit:setInteractive` IPC）。
+> 注意：拖拽用屏幕坐标计算窗口位移，快速点击判定 300ms/6px 阈值；点击穿透切换由 renderer 命中判定驱动（`hit:updateRegion` IPC 上报区域 + 主进程轮询光标）。
+
+### 命令行遥控（CLI / Claude Code skill）
+
+桌宠运行中，再次带参数启动即向已有实例下发命令（首启参数同样生效）。CMD 里直接 `start-pet.bat --play hello`；Git Bash（Claude Code）里：
+
+```bash
+cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放动作，播完回待机
+./start-pet.bat --animation none    # 切换常驻待机动画（none=手写待机）
+./start-pet.bat --model AvatarSample_B
+./start-pet.bat --facing 90         # 转身（0/45/90/135/180）
+./start-pet.bat --hide              # 隐藏（--show 显示，--quit 退出）
+```
+
+名称匹配：去扩展名忽略大小写，先精确后子串；`--play` 支持 `poke/surprise`、`hello/happy` 等别名；多命令可组合（`--play hello --facing 90`）。命令回执（含原始 argv）与匹配失败都写入 `ai-live3d.log` 的 `[cmd]` 行。配套 **Claude Code skill** `.claude/skills/live3d-pet/SKILL.md`：装了 Claude Code 的会话里直接说「让桌宠跳个舞」即可遥控。
 
 ## 开发
 

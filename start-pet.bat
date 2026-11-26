@@ -24,4 +24,7 @@ if not exist "dist\bundle.js" (
 
 rem NOTE: the app path is a bare "." on purpose — appending "%~dp0" would end
 rem with \" which cmd parses as an escaped quote and breaks the electron launch.
-start "" "node_modules\electron\dist\electron.exe" .
+rem Any arguments are forwarded to the app (remote-control channel, see
+rem README "Command-line remote control"): --show --hide --quit --model <name>
+rem --animation <name|none> --play <name> --facing <deg> --devtools
+start "" "node_modules\electron\dist\electron.exe" . %*

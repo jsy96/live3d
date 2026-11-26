@@ -270,18 +270,177 @@ function registerIpc() {
       y: Math.round(y),
     });
   });
+
+  // Renderer finished startup (IPC listeners registered): deliver any CLI
+  // commands that arrived before it was ready.
+  ipcMain.on('app:ready', () => {
+    rendererReady = true;
+    while (queuedCli.length > 0) sendCliToRenderer(queuedCli.shift());
+  });
+}
+
+// --- external control channel ---------------------------------------------
+// The app is single-instance: launching `electron . <args>` again while it is
+// running delivers argv through the 'second-instance' event. We reuse that as
+// a remote-control channel for start-pet.bat / the Claude Code skill:
+//   --show | --hide | --quit | --devtools
+//   --model <name-or-path>     switch model (name matched inside models/)
+//   --animation <name|none>    switch idle animation ("none" = hand-written)
+//   --play <name>              play a clip from animations/ once, then idle
+//   --facing <deg>             turn the pet (0 = front, 180 = back)
+const PLAY_ALIASES = {
+  poke: 'surprise',
+  poked: 'surprise',
+  surprise: 'surprise',
+  startled: 'surprise',
+  hello: 'hello',
+  hi: 'hello',
+  wave: 'hello',
+  happy: 'hello',
+  cheer: 'hello',
+  greet: 'hello',
+  greeting: 'hello',
+};
+
+// Match a user-typed name against a directory listing: basename without
+// extension, case-insensitive; exact match wins, first substring match next.
+function resolveEntry(list, name) {
+  const q = String(name).toLowerCase().replace(/\.(vrm|glb|vrma)$/i, '');
+  let partial = null;
+  for (const e of list) {
+    const base = path.basename(e.path).toLowerCase().replace(/\.(vrm|glb|vrma)$/i, '');
+    if (base === q) return e;
+    if (!partial && q && base.includes(q)) partial = e;
+  }
+  return partial;
+}
+
+// Chromium re-serializes the command line of relaunched processes (the scheme
+// switches from registerSchemesAsPrivileged force a re-exec), demoting switch
+// VALUES to positional args and inserting its own switches:
+//   [exe, --play, --allow-file-access-from-files, --secure-scheme=..., ., surprise]
+// So parsing is reorder-tolerant: unknown "--switches" are skipped as noise,
+// the exe/app path is skipped, and orphan positional values are handed to
+// value-expecting flags in FIFO order (chromium preserves relative order on
+// both sides, so the pairing reconstructs exactly).
+function parseCliArgs(argv) {
+  const cmds = {
+    model: null,
+    animation: undefined,
+    play: null,
+    facing: null,
+    hide: false,
+    devtools: false,
+    quit: false,
+  };
+  const appRoot = path.resolve(__dirname, '..');
+  const waiting = []; // value-expecting flags still needing their argument
+  const boolFlags = {
+    '--hide': 'hide',
+    '--devtools': 'devtools',
+    '--quit': 'quit',
+    '--exit': 'quit',
+  };
+  const valueFlags = {
+    '--model': 'model',
+    '--animation': 'animation',
+    '--idle': 'animation',
+    '--play': 'play',
+    '--reaction': 'play',
+    '--facing': 'facing',
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (i === 0 || tok === '.' || (path.isAbsolute(tok) && tok.toLowerCase() === appRoot.toLowerCase())) {
+      continue; // electron exe / app directory positional
+    }
+    if (boolFlags[tok]) {
+      cmds[boolFlags[tok]] = true;
+      continue;
+    }
+    if (valueFlags[tok]) {
+      waiting.push(valueFlags[tok]);
+      continue;
+    }
+    if (tok.startsWith('--') || tok.startsWith('-')) {
+      continue; // chromium noise (--secure-scheme=..., --allow-file-...)
+    }
+    // Positional value: assign to the oldest flag still waiting for one.
+    const slot = waiting.shift();
+    if (slot) cmds[slot] = tok;
+  }
+  if (cmds.facing != null) cmds.facing = Number(cmds.facing);
+  return cmds;
+}
+
+let rendererReady = false;
+const queuedCli = [];
+
+function dispatchCli(argv, source) {
+  const cmds = parseCliArgs(argv);
+  appendLog(`[cmd] ${source} raw argv: ${JSON.stringify(argv)}`);
+  appendLog(`[cmd] ${source}: ${JSON.stringify(cmds)}`);
+  if (cmds.quit) {
+    app.quit();
+    return;
+  }
+  if (cmds.devtools) win?.webContents.toggleDevTools();
+  // Any invocation shows the pet (legacy double-click-bat behavior); only an
+  // explicit --hide keeps it hidden. Focus only for plain no-command wakes.
+  const hasCmds =
+    cmds.model != null ||
+    cmds.animation !== undefined ||
+    cmds.play != null ||
+    cmds.facing != null ||
+    cmds.devtools ||
+    cmds.hide;
+  if (cmds.hide) win?.hide();
+  else {
+    win?.show();
+    if (!hasCmds) win?.focus();
+  }
+  // Model/animation/play/facing reach the renderer via IPC; queue them until
+  // it has registered its listeners (first launch races renderer startup).
+  if (!rendererReady) {
+    queuedCli.push(cmds);
+    return;
+  }
+  sendCliToRenderer(cmds);
+}
+
+function sendCliToRenderer(cmds) {
+  if (cmds.model != null) {
+    const entry =
+      path.isAbsolute(cmds.model) && fs.existsSync(cmds.model)
+        ? toModelEntry(path.resolve(cmds.model))
+        : resolveEntry(listModels(), cmds.model);
+    if (entry) setModel(entry);
+    else appendLog(`[cmd] model not found: ${cmds.model}`);
+  }
+  if (cmds.animation !== undefined) {
+    if (/^(none|null|off|-)$/i.test(cmds.animation)) {
+      setAnimation(null);
+    } else {
+      const entry = resolveEntry(listAnimations(), cmds.animation);
+      if (entry) setAnimation(entry);
+      else appendLog(`[cmd] animation not found: ${cmds.animation}`);
+    }
+  }
+  if (Number.isFinite(cmds.facing)) setFacing(cmds.facing);
+  if (cmds.play != null) {
+    const alias = PLAY_ALIASES[String(cmds.play).toLowerCase()];
+    const entry = resolveEntry(listAnimations(), alias ?? cmds.play);
+    if (entry) win?.webContents.send('animations:playOnce', entry);
+    else appendLog(`[cmd] play: animation not found: ${cmds.play}`);
+  }
 }
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    appendLog('[second-instance] another launch attempt: showing the existing window');
-    if (win) {
-      win.show();
-      win.focus();
-    }
+  app.on('second-instance', (_event, argv) => {
+    dispatchCli(argv, 'second-instance');
   });
 
   app.whenReady().then(() => {
@@ -293,6 +452,9 @@ if (!gotLock) {
     registerIpc();
     createWindow();
     startCursorPoll();
+    // Command-line args of THIS (first) instance, e.g. a cold
+    // `start-pet.bat --play hello` launch; queued until the renderer is ready.
+    dispatchCli(process.argv, 'launch');
 
     createTray(
       () => win,
