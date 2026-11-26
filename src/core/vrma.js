@@ -45,8 +45,27 @@ export class VRMAPlayer {
     this._disposeMixer();
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     const clip = createVRMAnimationClip(this.vrmAnimation, vrm);
+    this._pinHipsToCenter(clip);
     this.action = this.mixer.clipAction(clip);
     this.action.play();
+  }
+
+  /**
+   * Desktop pet must stay centered: VRMA clips made for streaming stages carry
+   * lateral/forward hips drift that looks like the pet is sliding around in
+   * the narrow window. Zero out the X/Z hips translation, keep vertical bob.
+   */
+  _pinHipsToCenter(clip) {
+    // Track name = "<hips node name>.position"; match by suffix + "hips" so it
+    // does not depend on three-vrm's normalized-rig naming.
+    const track = clip.tracks.find((t) => t.name.endsWith('.position') && /hips/i.test(t.name));
+    if (!track) return;
+    const v = track.values;
+    for (let i = 0; i < v.length; i += 3) {
+      v[i] = 0; // x: no lateral drift
+      v[i + 2] = 0; // z: no forward/back drift
+      // v[i+1] (y) kept: vertical bob gives the breathing feel.
+    }
   }
 
   play() {

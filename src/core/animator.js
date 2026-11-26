@@ -283,8 +283,11 @@ export class Animator {
         }
         if (b.hips) b.hips.position.y = this.hipsBaseY + hopY;
         const wave = armRaise > 0.3 ? Math.sin(t * 8) * 0.12 * armRaise : 0;
-        if (b.leftUpperArm) b.leftUpperArm.rotation.z = A_POSE_ANGLE + armRaise * 0.95 + wave;
-        if (b.rightUpperArm) b.rightUpperArm.rotation.z = -A_POSE_ANGLE - armRaise * 0.95 - wave;
+        // Raise the arms by rotating BACK toward the T-pose and beyond (negative
+        // direction): rotating further positive would cross both arms over the
+        // body midline (they end up folded behind the back).
+        if (b.leftUpperArm) b.leftUpperArm.rotation.z = A_POSE_ANGLE - armRaise * 2.0 + wave;
+        if (b.rightUpperArm) b.rightUpperArm.rotation.z = -A_POSE_ANGLE + armRaise * 2.0 - wave;
         if (b.spine) b.spine.rotation.x = base.spine.x + (armRaise > 0 ? 0.05 * armRaise : 0);
         if (p >= 1) this.setState(STATE.IDLE);
         break;

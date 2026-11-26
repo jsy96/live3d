@@ -7,6 +7,9 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261126-7**（2026-11-26）
+  - 修复：**VRMA 待机角色左右乱窜**——`idle_loop.vrma` 为直播场景制作，自带 hips 水平位移轨道；`VRMAPlayer._pinHipsToCenter()` 加载后把 hips 位移的 X/Z 分量清零（保留 Y 起伏），任何 VRMA 强制「原地站桩」适配桌宠窗口
+  - 修复：**欢呼时双手臂在背后交叉**——normalized 骨骼中左臂沿 $-X$，`rotation.z` 正向转过 90° 垂直线后手臂越过身体中线甩向对侧；上举改为反向旋转（从下垂 63° 转回水平再转负角度至斜上外侧），幅度从 +0.95 改为 -2.0 方向
 - **v1.0.261126-6**（2026-11-26）
   - **接入 VRMA 动画路线**：新增 `@pixiv/three-vrm-animation` 依赖与 `src/core/vrma.js`（`VRMAPlayer`：GLTFLoader + `VRMAnimationLoaderPlugin` 解析 `.vrma`，`createVRMAnimationClip` 生成 AnimationClip，`rebind()` 换模型时免下载重绑）
   - **与手写动画互斥**：待机时 VRMA 驱动标准骨骼（`Animator.update` 让位），任何互动（摸头/拖拽/戳/欢呼）期间自动暂停 VRMA、由手写姿势接管，回待机自动恢复播放；VRMA 自带表情轨道时不写入手写表情避免覆盖
