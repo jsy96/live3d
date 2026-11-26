@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' live3d-model: blob: data:;"
+  />
+  <title>AI Live3D</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div id="panel" class="hidden">
+    <div id="panel-title">AI Live3D 桌宠</div>
+    <p>把 <b>.vrm</b> 模型放进项目的 <code>models/</code> 文件夹，或选择一个模型：</p>
+    <div id="panel-buttons">
+      <button id="pick-btn">从 models/ 目录选择</button>
+      <button id="pick-file-btn">打开文件...</button>
+    </div>
+    <p id="panel-error"></p>
+    <input id="file-input" type="file" accept=".vrm,.glb" />
+  </div>
+
+  <div id="bubble" class="hidden"></div>
+  <div id="debug-badge" class="hidden"></div>
+
+  <script type="module" src="../dist/bundle.js"></script>
+</body>
+</html>

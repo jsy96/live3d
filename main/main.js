@@ -1,0 +1,147 @@
+const { app, BrowserWindow, ipcMain, dialog, screen, protocol, net } = require('electron');
+const path = require('node:path');
+const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+const { createTray } = require('./tray');
+const { APP_VERSION } = require('./version');
+
+const MODELS_DIR = path.join(__dirname, '..', 'models');
+// Custom protocol to serve model files: renderer fetch() cannot read file:// URLs.
+const MODEL_SCHEME = 'live3d-model';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MODEL_SCHEME,
+    privileges: { secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
+
+function toModelEntry(absPath) {
+  return { path: absPath, url: `${MODEL_SCHEME}://${encodeURIComponent(absPath)}` };
+}
+
+function listModels() {
+  try {
+    return fs
+      .readdirSync(MODELS_DIR)
+      .filter((f) => /\.(vrm|glb)$/i.test(f))
+      .map((f) => toModelEntry(path.join(MODELS_DIR, f)));
+  } catch {
+    return [];
+  }
+}
+
+let win = null;
+
+function pickModelDialog() {
+  return dialog.showOpenDialog(win, {
+    title: 'Select a VRM model',
+    defaultPath: MODELS_DIR,
+    filters: [{ name: 'VRM / GLB model', extensions: ['vrm', 'glb'] }],
+    properties: ['openFile'],
+  });
+}
+
+function createWindow() {
+  const { workArea } = screen.getPrimaryDisplay();
+  const width = 380;
+  const height = 600;
+
+  win = new BrowserWindow({
+    width,
+    height,
+    x: workArea.x + workArea.width - width - 40,
+    y: workArea.y + workArea.height - height,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      // Keep the pet alive (breathing / blinking) even when the window has no focus.
+      backgroundThrottling: false,
+    },
+  });
+
+  win.setAlwaysOnTop(true, 'screen-saver');
+  // Click-through by default; the renderer flips this on when the pointer
+  // is over the model (see src/platform.js -> setInteractive).
+  win.setIgnoreMouseEvents(true, { forward: true });
+  win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
+
+  win.webContents.on('console-message', (_event, _level, message) => {
+    console.log(`[renderer] ${message}`);
+  });
+  win.on('closed', () => {
+    win = null;
+  });
+}
+
+function registerIpc() {
+  ipcMain.handle('models:list', () => listModels());
+
+  ipcMain.handle('models:pick', async () => {
+    if (!win) return null;
+    const result = await pickModelDialog();
+    return result.canceled ? null : toModelEntry(result.filePaths[0]);
+  });
+
+  ipcMain.on('hit:setInteractive', (_event, interactive) => {
+    if (!win) return;
+    win.setIgnoreMouseEvents(!interactive, { forward: true });
+  });
+
+  ipcMain.on('win:moveBy', (_event, dx, dy) => {
+    if (!win) return;
+    const [x, y] = win.getPosition();
+    win.setPosition(x + Math.round(dx), y + Math.round(dy));
+  });
+
+  ipcMain.handle('app:version', () => APP_VERSION);
+  ipcMain.on('app:toggleDevTools', () => win?.webContents.toggleDevTools());
+  ipcMain.on('app:quit', () => app.quit());
+}
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      win.show();
+      win.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    protocol.handle(MODEL_SCHEME, (request) => {
+      const absPath = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
+      return net.fetch(pathToFileURL(absPath).toString());
+    });
+
+    registerIpc();
+    createWindow();
+
+    createTray(
+      () => win,
+      async () => {
+        if (!win) return;
+        const result = await pickModelDialog();
+        if (!result.canceled && win) {
+          win.webContents.send('models:changed', toModelEntry(result.filePaths[0]));
+        }
+      }
+    );
+  });
+
+  app.on('window-all-closed', () => {
+    app.quit();
+  });
+}

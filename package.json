@@ -1,0 +1,22 @@
+{
+  "name": "ai-live3d",
+  "version": "1.0.0",
+  "description": "AI 3D desktop pet (VRM + Electron), designed to roam between desktop and phone",
+  "main": "main/main.js",
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --format=iife --outfile=dist/bundle.js --log-level=warning",
+    "start": "npm run build && electron .",
+    "start:fast": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.0.0",
+    "three": "^0.170.0"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
