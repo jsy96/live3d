@@ -165,7 +165,9 @@ export class VRMAPlayer {
     for (let i = 0; i < v.length; i += 3) {
       v[i] = 0; // x: no lateral drift
       v[i + 2] = 0; // z: no forward/back drift
-      // v[i+1] (y) kept: vertical bob gives the breathing feel.
+      // y: keep vertical bob but clamp it — source-clip displacement scaled to
+      // a much taller model can otherwise push the pet right out of the window.
+      v[i + 1] = Math.max(-0.15, Math.min(0.15, v[i + 1]));
     }
   }
 }

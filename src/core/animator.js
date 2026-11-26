@@ -179,6 +179,7 @@ export class Animator {
         this.mixer.update(dt);
       }
       this.vrma.update(dt);
+      this._clampHipsHeight();
       this.vrm.update(dt);
       return;
     }
@@ -192,6 +193,7 @@ export class Animator {
       this._updateBlink(dt);
       this.mixer.update(dt);
       this.vrma.update(dt);
+      this._clampHipsHeight();
       this.vrm.update(dt);
       return;
     }
@@ -353,6 +355,17 @@ export class Animator {
     this.mixer.set('relaxed', relaxed);
     this.mixer.update(dt);
     this.vrm.update(dt);
+  }
+
+  /**
+   * Per-frame backstop: clamp the hips height around its rest position so no
+   * VRMA clip (whose vertical displacement gets scaled to the model's rest
+   * height) can ever push the pet out of the window.
+   */
+  _clampHipsHeight() {
+    const hips = this.bones.hips;
+    if (!hips) return;
+    hips.position.y = clamp(hips.position.y, this.hipsBaseY - 0.15, this.hipsBaseY + 0.15);
   }
 
   _updateBlink(dt) {
