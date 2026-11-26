@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
 
+// Crossfade duration for every VRMA-to-VRMA transition (idle <-> reaction).
+const TRANSITION = 0.2;
+
 /**
  * Plays .vrma (VRM Animation) clips on a VRM via THREE.AnimationMixer.
  *
@@ -73,6 +76,7 @@ export class VRMAPlayer {
     this._disposeMixer();
     if (!this.idleAnimation) return;
     this.mixer = new THREE.AnimationMixer(vrm.scene);
+    this.mixer.addEventListener('finished', (e) => this._onMixerFinished(e));
     const clip = createVRMAnimationClip(this.idleAnimation, vrm);
     this._pinHipsToCenter(clip);
     this.action = this.mixer.clipAction(clip);
@@ -80,6 +84,22 @@ export class VRMAPlayer {
     for (const kind of [...this.reactions.keys()]) {
       this._buildReactionAction(kind, vrm);
     }
+  }
+
+  /**
+   * One-shot reaction clip finished on its own: fade the idle loop back in
+   * (its clock kept running, so the loop resumes in continuous motion) and
+   * notify the animator to leave the REACTION state.
+   */
+  _onMixerFinished(e) {
+    if (e.action !== this.reactionAction) return;
+    this.reactionAction = null;
+    const kind = this.reactionKind;
+    this.reactionKind = null;
+    const cb = this._onReactionFinished;
+    this._onReactionFinished = null;
+    this._resumeIdle();
+    cb?.();
   }
 
   _buildReactionAction(kind, vrm) {
@@ -94,30 +114,51 @@ export class VRMAPlayer {
     entry.action = action;
   }
 
-  /** Start a one-shot reaction; returns false when the kind was not loaded. */
+  /** Start a one-shot reaction with a smooth crossfade from the idle loop. */
   startReaction(kind, onFinished) {
     const entry = this.reactions.get(kind);
     if (!entry?.action) return false;
-    this.action?.stop(); // idle loop steps aside
-    this.reactionAction?.stop();
+    if (this.reactionAction) this.reactionAction.stop();
+    // Crossfade: idle fades out (its clock keeps running so the loop is
+    // continuous), reaction fades in from weight 0 — no pose snapping.
+    this.action?.fadeOut(TRANSITION);
+    entry.action.reset().setEffectiveWeight(0).fadeIn(TRANSITION).play();
     this.reactionKind = kind;
     this.reactionAction = entry.action;
     this._onReactionFinished = onFinished ?? null;
-    entry.action.reset().play();
     return true;
   }
 
+  /** Interrupt a playing reaction (interaction took over); idle fades back. */
   stopReaction() {
-    this.reactionAction?.stop();
+    if (this.reactionAction) {
+      this.reactionAction.stop();
+    }
     this.reactionAction = null;
     this.reactionKind = null;
     this._onReactionFinished = null;
+    this._resumeIdle();
+  }
+
+  /** Fade the idle loop back in WITHOUT resetting its clock. */
+  _resumeIdle() {
+    if (!this.action) return;
+    if (!this.action.isRunning()) {
+      this.action.reset().setEffectiveWeight(1).play();
+      return;
+    }
+    this.action.setEffectiveWeight(0);
+    this.action.fadeIn(TRANSITION);
   }
 
   play() {
-    if (this.action && !this.action.isRunning() && !this.reactionRunning) {
-      this.action.play();
+    if (!this.action || this.reactionRunning) return;
+    if (!this.action.isRunning()) {
+      // Fresh start after a full stop (e.g. hand-written idle took over).
+      this.action.reset().setEffectiveWeight(1).play();
     }
+    // While running (incl. mid-fade) leave the weights untouched so fades
+    // complete naturally.
   }
 
   stop() {

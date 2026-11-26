@@ -6,6 +6,15 @@ import { HitTester } from './interaction/hit-test.js';
 import { MouseInteractor } from './interaction/mouse.js';
 import { platform } from './platform.js';
 
+// Uncaught errors land in the log with full stacks (console-message hook in
+// the main process writes them to ai-live3d.log).
+window.addEventListener('error', (ev) => {
+  console.error(`[ai-live3d] uncaught: ${ev.message}\n${ev.error?.stack ?? '(no stack)'}`);
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  console.error(`[ai-live3d] unhandled rejection: ${ev.reason?.stack || ev.reason}`);
+});
+
 const canvas = document.getElementById('stage');
 const panel = document.getElementById('panel');
 const panelError = document.getElementById('panel-error');
@@ -43,6 +52,7 @@ async function main() {
       if (interactor) interactor.dispose();
       interactor = new MouseInteractor(viewer, hitTester, animator, {
         onPointerNDC: (x, y) => viewer.setLookFromPointer(x, y),
+        onWheelRotate: (step) => viewer.setFacing(viewer.facingTarget + step),
       });
       panel.classList.add('hidden');
       if (typeof entry === 'object' && entry.path) {
@@ -128,6 +138,7 @@ async function main() {
   // Model picked from the tray menu arrives via IPC event.
   platform.onModelChanged((entry) => loadModel(entry));
   platform.onAnimationChanged((entry) => loadAnimation(entry));
+  platform.onFacingChanged((deg) => viewer.setFacing(deg));
 
   document.getElementById('pick-btn').addEventListener('click', async () => {
     const entry = await platform.pickModel();
@@ -187,6 +198,7 @@ async function main() {
     const dt = Math.min((nowMs - last) / 1000, 0.1);
     last = nowMs;
     try {
+      viewer.updateFacing(dt);
       animator?.update(dt);
     } catch (err) {
       console.error(`[ai-live3d] animator error (${animator?.state ?? '-'}): ${err?.message}`);

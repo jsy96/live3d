@@ -63,6 +63,9 @@ export const platform = {
   onAnimationChanged(cb) {
     if (bridge) bridge.onAnimationChanged(cb);
   },
+  onFacingChanged(cb) {
+    if (bridge) bridge.onFacingChanged(cb);
+  },
 
   async getAppVersion() {
     if (bridge) return bridge.getAppVersion();

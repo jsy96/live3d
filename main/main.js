@@ -89,6 +89,11 @@ function setAnimation(entry) {
   if (win) win.webContents.send('animations:changed', entry ?? null);
 }
 
+/** Command the pet to turn (degrees, 0 = front). */
+function setFacing(deg) {
+  if (win) win.webContents.send('facing:set', deg);
+}
+
 function listAnimations() {
   try {
     return fs
@@ -235,6 +240,19 @@ function registerIpc() {
           click: () => setAnimation(a),
         })),
       });
+    }
+    template.push({ type: 'separator' });
+
+    // Turntable facing (scroll wheel also steps these).
+    template.push({ label: 'Facing', enabled: false });
+    for (const [label, deg] of [
+      ['Front', 0],
+      ['Three-quarter', 45],
+      ['Side', 90],
+      ['Back three-quarter', 135],
+      ['Back', 180],
+    ]) {
+      template.push({ label, click: () => setFacing(deg) });
     }
     template.push({ type: 'separator' });
 

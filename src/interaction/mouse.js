@@ -41,6 +41,13 @@ export class MouseInteractor {
     this._onLeave = () => {
       document.body.classList.remove('grab');
     };
+    this._onWheel = (e) => {
+      // Scroll over the pet turns it; over the desktop it scrolls normally.
+      if (!this.hit.hit(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      const step = e.deltaY > 0 ? -45 : 45;
+      this.hooks.onWheelRotate?.(step);
+    };
 
     const c = viewer.canvas;
     c.addEventListener('pointermove', this._onMove);
@@ -48,6 +55,7 @@ export class MouseInteractor {
     c.addEventListener('pointerleave', this._onLeave);
     window.addEventListener('pointerup', this._onUp);
     c.addEventListener('dblclick', this._onDbl);
+    c.addEventListener('wheel', this._onWheel, { passive: false });
   }
 
   dispose() {
@@ -57,6 +65,7 @@ export class MouseInteractor {
     c.removeEventListener('pointerleave', this._onLeave);
     window.removeEventListener('pointerup', this._onUp);
     c.removeEventListener('dblclick', this._onDbl);
+    c.removeEventListener('wheel', this._onWheel);
   }
 
   _ndc(e) {

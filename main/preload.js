@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('live3d', {
   onAnimationChanged: (cb) => {
     ipcRenderer.on('animations:changed', (_event, entry) => cb(entry));
   },
+  onFacingChanged: (cb) => {
+    ipcRenderer.on('facing:set', (_event, deg) => cb(deg));
+  },
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
   onModelChanged: (cb) => {
     ipcRenderer.on('models:changed', (_event, entry) => cb(entry));

@@ -30,6 +30,9 @@ export function createViewer(canvas) {
   scene.add(lookTarget);
 
   let current = null;
+  // Facing (turntable) state in degrees: 0 = front, ±45 = three-quarter,
+  // ±90 = side, 180 = back. Damped so the turn never snaps.
+  const facing = { current: 0, target: 0 };
 
   function fitRenderer() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -52,6 +55,21 @@ export function createViewer(canvas) {
     },
     set vrm(v) {
       current = v;
+    },
+    get facingTarget() {
+      return facing.target;
+    },
+    setFacing(deg) {
+      facing.target = deg;
+    },
+    updateFacing(dt) {
+      if (current) {
+        // Shortest-path damping toward the target angle.
+        // NOTE: current is the VRM instance — the Object3D is vrm.scene.
+        const diff = ((((facing.target - facing.current) % 360) + 540) % 360) - 180;
+        facing.current += diff * (1 - Math.exp(-dt * 8));
+        current.scene.rotation.y = (facing.current * Math.PI) / 180;
+      }
     },
     render() {
       renderer.render(scene, camera);
