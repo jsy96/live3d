@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createTray } = require('./tray');
+const { createLanServer } = require('./lan');
 const { APP_VERSION } = require('./version');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
@@ -76,6 +77,16 @@ function startCursorPoll() {
 let win = null;
 let currentModelPath = null;
 let currentAnimationPath = null;
+let lan = null; // LAN web server for the phone (main/lan.js)
+let trayApi = null;
+
+/** Turn the LAN phone-access server on/off; refreshes the tray menu. */
+async function setLan(on) {
+  if (!lan) return false;
+  const ok = on ? await lan.start() : (lan.stop(), true);
+  trayApi?.refresh();
+  return ok;
+}
 
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
 function setModel(entry) {
@@ -278,6 +289,8 @@ function registerIpc() {
 //   --animation <name|none>    switch idle animation ("none" = hand-written)
 //   --play <name>              play a clip from animations/ once, then idle
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
+//   --lan <on|off|toggle>      LAN phone-access web server
+//   --qr                       show the QR window for phones to scan
 const PLAY_ALIASES = {
   poke: 'surprise',
   poked: 'surprise',
@@ -319,6 +332,8 @@ function parseCliArgs(argv) {
     animation: undefined,
     play: null,
     facing: null,
+    lan: null,
+    qr: false,
     hide: false,
     devtools: false,
     quit: false,
@@ -330,6 +345,7 @@ function parseCliArgs(argv) {
     '--devtools': 'devtools',
     '--quit': 'quit',
     '--exit': 'quit',
+    '--qr': 'qr',
   };
   const valueFlags = {
     '--model': 'model',
@@ -338,6 +354,7 @@ function parseCliArgs(argv) {
     '--play': 'play',
     '--reaction': 'play',
     '--facing': 'facing',
+    '--lan': 'lan',
   };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
@@ -375,6 +392,18 @@ function dispatchCli(argv, source) {
     return;
   }
   if (cmds.devtools) win?.webContents.toggleDevTools();
+  // LAN / QR are main-process level, so they run even before the renderer is up.
+  if (cmds.lan != null) {
+    const v = String(cmds.lan).toLowerCase();
+    if (v === 'toggle') setLan(!lan?.running);
+    else if (/^(on|1|true|yes|start)$/.test(v)) setLan(true);
+    else if (/^(off|0|false|no|stop)$/.test(v)) setLan(false);
+    else appendLog(`[cmd] lan: unknown value: ${cmds.lan}`);
+  }
+  if (cmds.qr) {
+    if (lan?.running) lan.showQr();
+    else setLan(true).then(() => lan?.showQr());
+  }
   // Any invocation shows the pet (legacy double-click-bat behavior); only an
   // explicit --hide keeps it hidden. Focus only for plain no-command wakes.
   const hasCmds =
@@ -382,6 +411,8 @@ function dispatchCli(argv, source) {
     cmds.animation !== undefined ||
     cmds.play != null ||
     cmds.facing != null ||
+    cmds.lan != null ||
+    cmds.qr ||
     cmds.devtools ||
     cmds.hide;
   if (cmds.hide) win?.hide();
@@ -433,7 +464,7 @@ if (!gotLock) {
     dispatchCli(argv, 'second-instance');
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     protocol.handle(MODEL_SCHEME, (request) => {
       const absPath = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
       return net.fetch(pathToFileURL(absPath).toString());
@@ -442,16 +473,28 @@ if (!gotLock) {
     registerIpc();
     createWindow();
     startCursorPoll();
+
+    // Phone access: the LAN web server auto-starts so a phone can connect out
+    // of the box (Windows will ask once to allow it through the firewall).
+    lan = createLanServer(appendLog);
+    await setLan(true);
+
     // Command-line args of THIS (first) instance, e.g. a cold
     // `start-pet.bat --play hello` launch; queued until the renderer is ready.
+    // (After the LAN start so a cold `--lan off` wins over the auto-start.)
     dispatchCli(process.argv, 'launch');
 
-    createTray(
+    trayApi = createTray(
       () => win,
       async () => {
         if (!win) return;
         const result = await pickModelDialog();
         if (!result.canceled) setModel(toModelEntry(result.filePaths[0]));
+      },
+      {
+        lanState: () => ({ running: lan?.running ?? false, url: lan?.lanUrl() }),
+        toggleLan: () => setLan(!lan?.running),
+        showQr: () => (lan?.running ? lan.showQr() : setLan(true).then(() => lan?.showQr())),
       }
     );
   });

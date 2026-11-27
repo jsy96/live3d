@@ -33,6 +33,8 @@ export class MouseInteractor {
     // Head-stroke accumulator.
     this.stroke = 0;
     this._headLast = null;
+    // Last quick tap (for double-tap detection; see _classifyTap).
+    this._lastTap = null;
 
     this._onMove = (e) => this._move(e);
     this._onDown = (e) => this._down(e);
@@ -140,6 +142,19 @@ export class MouseInteractor {
     }
   }
 
+  // Quick-tap classifier shared by the body/head release branches. A second
+  // quick tap within 350ms and 35px counts as a double TAP: the dblclick event
+  // is not reliably fired by mobile browsers, so we detect it ourselves.
+  _classifyTap(e) {
+    const now = performance.now();
+    const isDouble =
+      this._lastTap != null &&
+      now - this._lastTap.t < 350 &&
+      Math.hypot(e.clientX - this._lastTap.x, e.clientY - this._lastTap.y) < 35;
+    this._lastTap = isDouble ? null : { x: e.clientX, y: e.clientY, t: now };
+    return isDouble;
+  }
+
   _up(e) {
     document.body.classList.remove('grabbing');
     if (this.dragging) {
@@ -148,13 +163,20 @@ export class MouseInteractor {
         performance.now() - this.downAt < 300 &&
         this.dragMoved < 6 &&
         Math.hypot(e.clientX - this.downX, e.clientY - this.downY) < 6;
-      if (quick) this.animator.poke();
-      else this.animator.release();
+      if (quick) {
+        if (this._classifyTap(e)) this.animator.excite();
+        else this.animator.poke();
+      } else {
+        this.animator.release();
+      }
     } else if (this.downRegion === 'head') {
       const quick =
         performance.now() - this.downAt < 300 &&
         Math.hypot(e.clientX - this.downX, e.clientY - this.downY) < 6;
-      if (quick) this.animator.poke();
+      if (quick) {
+        if (this._classifyTap(e)) this.animator.excite();
+        else this.animator.poke();
+      }
     }
     this.downRegion = null;
   }

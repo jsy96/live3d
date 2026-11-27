@@ -5,12 +5,26 @@
 //     every desktop-only capability degrades gracefully.
 const bridge = typeof window !== 'undefined' ? window.live3d : undefined;
 
+// LAN web mode (phone browser): listings come from the desktop host's HTTP API
+// (main/lan.js). In a plain local page (file:// or offline) fetch fails and we
+// degrade to an empty list — the file-picker setup panel still works there.
+async function webList(endpoint) {
+  try {
+    const r = await fetch(endpoint);
+    if (!r.ok) return [];
+    const arr = await r.json();
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
 export const platform = {
   isDesktop: !!bridge,
 
   async listModels() {
     if (bridge) return bridge.listModels();
-    return [];
+    return webList('/api/models');
   },
 
   async pickModel() {
@@ -52,10 +66,10 @@ export const platform = {
     if (bridge) bridge.reportCurrentModel(modelPath);
   },
 
-  // Idle animation (VRMA) handling; all no-ops in the browser.
+  // Idle animation (VRMA) handling; browser mode fetches the LAN host's list.
   async listAnimations() {
     if (bridge) return bridge.listAnimations();
-    return [];
+    return webList('/api/animations');
   },
   reportCurrentAnimation(animPath) {
     if (bridge) bridge.reportCurrentAnimation(animPath);
@@ -79,6 +93,15 @@ export const platform = {
 
   async getAppVersion() {
     if (bridge) return bridge.getAppVersion();
+    try {
+      const r = await fetch('/api/version');
+      if (r.ok) {
+        const { version } = await r.json();
+        if (version) return `${version} web`;
+      }
+    } catch {
+      /* not served by the LAN host */
+    }
     return 'web';
   },
 

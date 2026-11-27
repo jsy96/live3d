@@ -1,6 +1,6 @@
 ---
 name: live3d-pet
-description: 控制 AI Live3D 桌面宠物（项目 D:\cc\codex\ai-live3d）：启动/显示/隐藏/退出、切换 VRM 模型、切换待机动画、单次播放动作（打招呼/跳舞/惊讶/坐下等 126 个 VRMA）、转身朝向。当用户说"让桌宠跳个舞/打个招呼/被戳一下"、"打开/隐藏/关掉桌宠"、"给桌宠换个模型/换个动作"或要演示桌宠时使用。
+description: 控制 AI Live3D 桌面宠物（项目 D:\cc\codex\ai-live3d）：启动/显示/隐藏/退出、切换 VRM 模型、切换待机动画、单次播放动作（打招呼/跳舞/惊讶/坐下等 126 个 VRMA）、转身朝向、局域网手机访问与扫码。当用户说"让桌宠跳个舞/打个招呼/被戳一下"、"打开/隐藏/关掉桌宠"、"给桌宠换个模型/换个动作"、"让桌宠上手机/弹扫码窗口"或要演示桌宠时使用。
 ---
 
 # AI Live3D 桌宠遥控
@@ -32,6 +32,8 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello
 | `--animation <名称\|none>` | 切换**常驻待机动画**；`none` = 手写待机（呼吸/眨眼/视线跟随） |
 | `--model <名称或绝对路径>` | 切换 `models/` 里的 VRM 模型 |
 | `--facing <角度>` | 转身：0 正面 / 45 / 90 侧面 / 135 / 180 背面 |
+| `--lan <on\|off\|toggle>` | 局域网手机访问服务开关（默认随桌宠自动开启，端口 31790） |
+| `--qr` | 弹出手机扫码窗口（服务未开时自动启动） |
 | `--hide` / `--show` | 隐藏 / 显示窗口 |
 | `--devtools` | 切换 DevTools |
 | `--quit` | 退出桌宠 |
@@ -59,6 +61,7 @@ tail -n 15 /d/cc/codex/ai-live3d/ai-live3d.log
 
 - 命令已收到：`[cmd] second-instance: {...}`（或 `launch`）
 - 播放成功：`[ai-live3d] play-once: <路径>`；换动画成功：`animation loaded`；换模型成功：`model loaded`
+- 局域网服务：`[lan] listening on 0.0.0.0:31790` + `[lan] phone url: http://<ip>:31790`（手机浏览器/扫码入口）；`[lan] qr window shown` = 扫码窗口已弹出
 - 名称没匹配上：`[cmd] play: animation not found: <名称>` → 用 `ls` 查准确文件名重试
 - 桌宠不可见：多半是模型出画或渲染错误，翻日志找 `[error]` / `render-process-gone`
 - `--quit` 之后再用 `--play` 会重新完整启动（等模型加载完才播，属正常）

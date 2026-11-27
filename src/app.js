@@ -31,6 +31,9 @@ async function main() {
   }
 
   const viewer = createViewer(canvas);
+  // Web mode (phone browser via the LAN server) gets its own backdrop; the
+  // desktop transparent window must stay transparent.
+  if (!platform.isDesktop) document.body.classList.add('web');
   let animator = null;
   let hitTester = null;
   let interactor = null;

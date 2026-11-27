@@ -48,6 +48,11 @@ copy /y README.md "%STAGE%\" >nul || exit /b 1
 rem --- runtime: ONLY electron binaries, no Node.js needed on the target PC
 xcopy /e /i /q node_modules\electron\dist "%STAGE%\node_modules\electron\dist" >nul || exit /b 1
 
+rem --- LAN phone-access QR window deps (qrcode runtime graph; yargs is CLI-only)
+for %%p in (qrcode dijkstrajs pngjs) do (
+  if exist "node_modules\%%p" xcopy /e /i /q "node_modules\%%p" "%STAGE%\node_modules\%%p" >nul || exit /b 1
+)
+
 set ZIPNAME=ai-live3d-portable-%APP_VERSION%.zip
 echo Compressing to dist\%ZIPNAME% ...
 powershell -NoProfile -Command "Compress-Archive -Path 'dist/portable-stage/ai-live3d' -DestinationPath 'dist/%ZIPNAME%' -Force" || exit /b 1
