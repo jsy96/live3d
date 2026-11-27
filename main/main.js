@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, session, protocol, net, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, protocol, net, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -76,74 +76,6 @@ function startCursorPoll() {
 let win = null;
 let currentModelPath = null;
 let currentAnimationPath = null;
-// Camera mocap: the renderer reports the ACTUAL state (camera start can
-// fail); menu / CLI / badge requests are relayed through setMocap().
-let mocapActive = false;
-let mocapMirror = true;
-// Skeleton preview window: opens automatically while mocap runs, closable
-// any time (X or menu) without stopping the tracking itself.
-let mocapPreviewWin = null;
-// Camera picker: videoinput list reported by the renderer (labels only fill
-// in after a camera has opened once) + the persisted selection.
-let mocapDevices = [];
-let mocapCameraId = null;
-
-const cameraPrefFile = () => path.join(app.getPath('userData'), 'mocap-camera.json');
-function loadCameraPref() {
-  try {
-    return JSON.parse(fs.readFileSync(cameraPrefFile(), 'utf8')).deviceId ?? null;
-  } catch {
-    return null;
-  }
-}
-function saveCameraPref(id) {
-  try {
-    fs.writeFileSync(cameraPrefFile(), JSON.stringify({ deviceId: id ?? null }));
-  } catch {
-    // persistence must never break the app
-  }
-}
-mocapCameraId = loadCameraPref();
-
-/** Ask the renderer to start/stop webcam pose tracking. */
-function setMocap(enabled) {
-  win?.webContents.send('mocap:set', !!enabled);
-}
-
-/** Select the mocap camera (null = system default); persists + broadcasts. */
-function setMocapCamera(id) {
-  mocapCameraId = id ?? null;
-  saveCameraPref(mocapCameraId);
-  win?.webContents.send('mocap:camera', mocapCameraId);
-  appendLog(`[mocap] camera set: ${mocapCameraId ?? 'default'}`);
-}
-
-function openMocapPreview() {
-  if (mocapPreviewWin) return;
-  mocapPreviewWin = new BrowserWindow({
-    width: 400,
-    height: 330,
-    title: '动捕预览 · Mocap Skeleton',
-    alwaysOnTop: true,
-    resizable: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      // keep drawing even when the pet window has no focus
-      backgroundThrottling: false,
-    },
-  });
-  mocapPreviewWin.loadFile(path.join(__dirname, '..', 'src', 'preview.html'));
-  mocapPreviewWin.on('closed', () => {
-    mocapPreviewWin = null;
-  });
-}
-
-function closeMocapPreview() {
-  mocapPreviewWin?.close();
-}
 
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
 function setModel(entry) {
@@ -261,35 +193,6 @@ function registerIpc() {
   ipcMain.on('app:toggleDevTools', () => win?.webContents.toggleDevTools());
   ipcMain.on('app:quit', () => app.quit());
 
-  // Camera mocap state bridge (see mocapActive comment above). The skeleton
-  // preview window follows the mocap lifecycle automatically.
-  ipcMain.on('mocap:state', (_event, active) => {
-    mocapActive = !!active;
-    if (mocapActive) openMocapPreview();
-    else closeMocapPreview();
-  });
-  ipcMain.on('mocap:request', (_event, enabled) => {
-    setMocap(!!enabled);
-  });
-  // Landmark relay: tracking renderer -> preview window (no-op when closed).
-  ipcMain.on('mocap:landmarks', (_event, data) => {
-    mocapPreviewWin?.webContents.send('mocap:landmarks', data);
-  });
-  // Camera picker: the renderer reports the device list + what it actually
-  // uses (adopting fallbacks); menus/CLI select via setMocapCamera().
-  ipcMain.handle('mocap:getCamera', () => mocapCameraId);
-  ipcMain.on('mocap:devices', (_event, list, selected) => {
-    mocapDevices = Array.isArray(list) ? list : [];
-    if (selected !== undefined && (selected ?? null) !== mocapCameraId) {
-      // The renderer fell back (e.g. saved device unplugged): follow it.
-      mocapCameraId = selected ?? null;
-      saveCameraPref(mocapCameraId);
-    }
-    appendLog(
-      `[mocap] devices (${mocapDevices.length}): ${mocapDevices.map((d) => d.label).join(' | ') || '-'}`
-    );
-  });
-
   // Renderer reports which model it actually loaded (start-up picks models[0]).
   ipcMain.on('models:current', (_event, modelPath) => {
     currentModelPath = modelPath;
@@ -340,56 +243,6 @@ function registerIpc() {
     }
     template.push({ type: 'separator' });
 
-    // Camera mocap: webcam pose tracking drives the pet's body.
-    // Checked state = actual tracking state reported by the renderer.
-    template.push({
-      label: 'Camera Mocap',
-      type: 'checkbox',
-      checked: mocapActive,
-      click: () => setMocap(!mocapActive),
-    });
-    template.push({
-      label: 'Mirror Mode',
-      type: 'checkbox',
-      checked: mocapMirror,
-      click: () => {
-        mocapMirror = !mocapMirror;
-        win?.webContents.send('mocap:mirror', mocapMirror);
-      },
-    });
-    template.push({
-      label: 'Skeleton View',
-      type: 'checkbox',
-      checked: !!mocapPreviewWin,
-      enabled: mocapActive, // only meaningful while tracking runs
-      click: () => (mocapPreviewWin ? closeMocapPreview() : openMocapPreview()),
-    });
-    // Camera picker: device labels appear after mocap opened a camera once
-    // (Chromium hides them before media permission is exercised).
-    {
-      const camLabel = (l, i) =>
-        (l && l.length > 44 ? `${l.slice(0, 43)}…` : l) || `Camera ${i + 1}`;
-      const entries = [];
-      if (mocapDevices.length === 0) {
-        entries.push({ label: '(start mocap once to list cameras)', enabled: false });
-      }
-      entries.push({
-        label: 'Default (auto)',
-        type: 'checkbox',
-        checked: !mocapCameraId,
-        click: () => setMocapCamera(null),
-      });
-      for (const [i, d] of mocapDevices.entries()) {
-        entries.push({
-          label: camLabel(d.label, i),
-          type: 'checkbox',
-          checked: mocapCameraId === d.deviceId,
-          click: () => setMocapCamera(d.deviceId),
-        });
-      }
-      template.push({ label: 'Camera', submenu: entries });
-    }
-
     // Facing is wheel-controlled only (hover + scroll steps 45 degrees);
     // the old five-entry menu block was removed as redundant.
 
@@ -425,8 +278,6 @@ function registerIpc() {
 //   --animation <name|none>    switch idle animation ("none" = hand-written)
 //   --play <name>              play a clip from animations/ once, then idle
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
-//   --mocap <on|off|toggle>    webcam body tracking on / off / flip state
-//   --camera <name|default>    pick the mocap camera by label substring
 const PLAY_ALIASES = {
   poke: 'surprise',
   poked: 'surprise',
@@ -468,8 +319,6 @@ function parseCliArgs(argv) {
     animation: undefined,
     play: null,
     facing: null,
-    mocap: null,
-    camera: null,
     hide: false,
     devtools: false,
     quit: false,
@@ -489,8 +338,6 @@ function parseCliArgs(argv) {
     '--play': 'play',
     '--reaction': 'play',
     '--facing': 'facing',
-    '--mocap': 'mocap',
-    '--camera': 'camera',
   };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
@@ -535,8 +382,6 @@ function dispatchCli(argv, source) {
     cmds.animation !== undefined ||
     cmds.play != null ||
     cmds.facing != null ||
-    cmds.mocap != null ||
-    cmds.camera != null ||
     cmds.devtools ||
     cmds.hide;
   if (cmds.hide) win?.hide();
@@ -572,27 +417,6 @@ function sendCliToRenderer(cmds) {
     }
   }
   if (Number.isFinite(cmds.facing)) setFacing(cmds.facing);
-  if (cmds.mocap != null) {
-    if (/^(1|on|y|yes|true|start)$/i.test(cmds.mocap)) setMocap(true);
-    else if (/^(0|off|n|no|false|stop)$/i.test(cmds.mocap)) setMocap(false);
-    else setMocap(!mocapActive); // 'toggle' or any other value flips
-  }
-  if (cmds.camera != null) {
-    if (/^(default|auto|none|system)$/i.test(cmds.camera)) {
-      setMocapCamera(null);
-    } else {
-      const q = cmds.camera.toLowerCase();
-      const dev = mocapDevices.find((d) => (d.label || '').toLowerCase().includes(q));
-      if (dev) setMocapCamera(dev.deviceId);
-      else {
-        appendLog(
-          `[cmd] camera not found: ${cmds.camera} (known: ${
-            mocapDevices.map((d) => d.label).join(' | ') || 'none yet — start mocap once to enumerate'
-          })`
-        );
-      }
-    }
-  }
   if (cmds.play != null) {
     const alias = PLAY_ALIASES[String(cmds.play).toLowerCase()];
     const entry = resolveEntry(listAnimations(), alias ?? cmds.play);
@@ -611,20 +435,9 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     protocol.handle(MODEL_SCHEME, (request) => {
-      let p = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
-      // '$app/<relative>' resolves against the app root: the renderer does
-      // not know absolute paths, and bundled assets (e.g. the MediaPipe pose
-      // model) need fetch-able URLs just like user models do.
-      if (p.startsWith('$app/')) p = path.join(__dirname, '..', p.slice('$app/'.length));
-      return net.fetch(pathToFileURL(path.resolve(p)).toString());
+      const absPath = decodeURIComponent(request.url.slice(`${MODEL_SCHEME}://`.length));
+      return net.fetch(pathToFileURL(absPath).toString());
     });
-
-    // Camera access for the mocap feature: auto-grant media (the pet window
-    // has no UI to show Chromium's own prompt), deny everything else.
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === 'media');
-    });
-    session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
 
     registerIpc();
     createWindow();

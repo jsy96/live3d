@@ -187,8 +187,8 @@ export class VRMAPlayer {
   play() {
     if (!this.action || this.reactionRunning) return;
     if (!this.action.isRunning()) {
-      // Fresh start after a full stop (e.g. hand-written idle or camera mocap
-      // owned the bones): fade in from weight 0 so the pose never snaps.
+      // Fresh start after a full stop (e.g. hand-written idle owned the
+      // bones): fade in from weight 0 so the pose never snaps.
       this.action.reset().setEffectiveWeight(0).fadeIn(TRANSITION).play();
     }
     // While running (incl. mid-fade) leave the weights untouched so fades

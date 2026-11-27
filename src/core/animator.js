@@ -37,7 +37,6 @@ export class Animator {
     this.now = 0;
     this.stateStart = 0;
     this.vrma = null; // VRMAPlayer, set via setVRMA()
-    this.mocap = null; // MocapController, set from app.js; owns bones when active
     this.reactionKind = null; // 'poked' | 'happy' while STATE.REACTION
     this._sceneY = 0; // smoothed hips-height follow offset (scene.position.y)
 
@@ -79,7 +78,7 @@ export class Animator {
   /** Attach a VRMAPlayer for idle-loop animation (or null to disable). */
   setVRMA(player) {
     this.vrma = player;
-    if (this.state === STATE.IDLE && !this.mocap?.active) player?.play();
+    if (this.state === STATE.IDLE) player?.play();
   }
 
   setState(next) {
@@ -92,9 +91,8 @@ export class Animator {
     this.state = next;
     this.stateStart = this.now;
     // VRMA idle clip and manual poses both write normalized bones: stop the
-    // clip during interactions, resume it when back to idle. Camera mocap
-    // also owns the bones exclusively — keep the clip stopped while it runs.
-    if (next !== STATE.IDLE || this.mocap?.active) this.vrma?.stop();
+    // clip during interactions, resume it when back to idle.
+    if (next !== STATE.IDLE) this.vrma?.stop();
     else this.vrma?.play();
   }
 
@@ -104,7 +102,6 @@ export class Animator {
    * hand-written state.
    */
   startReaction(kind) {
-    if (this.mocap?.active) return false; // mocap owns the bones exclusively
     const entry = this.vrma?.reactions?.get?.(kind);
     if (!entry?.action) return false;
     // Direct state write: setState() would interrupt the reaction we just
@@ -133,30 +130,12 @@ export class Animator {
     this.vrm.scene.position.y = 0;
   }
 
-  /** Camera mocap takes over the pose exclusively: drop any playing clip. */
-  beginMocap() {
-    if (this.state === STATE.REACTION) {
-      this.vrma?.stopReaction();
-      this.reactionKind = null;
-    }
-    this.state = STATE.IDLE;
-    this.vrma?.stop();
-  }
-
-  /** Camera mocap released the pose: resume the idle loop (fades in). */
-  endMocap() {
-    this.state = STATE.IDLE;
-    this.vrma?.play();
-  }
-
   poke() {
-    if (this.mocap?.active) return; // mocap owns the pose; no reaction clips
     if (this.startReaction('poked')) return;
     this.setState(STATE.POKED);
   }
 
   excite() {
-    if (this.mocap?.active) return;
     if (this.startReaction('happy')) return;
     this.setState(STATE.HAPPY);
   }
@@ -183,7 +162,6 @@ export class Animator {
   }
 
   keepPetting() {
-    if (this.mocap?.active) return;
     this._lastPetting = this.now;
     if (this.state !== STATE.PETTING) this.setState(STATE.PETTING);
   }
@@ -194,20 +172,6 @@ export class Animator {
     const b = this.bones;
     const base = this.base;
     const inState = this.now - this.stateStart;
-
-    // Camera mocap mode: the MocapController drives the normalized bones
-    // from webcam pose tracking; manual pose writes and VRMA clips both stay
-    // off. Only the blink layer keeps running on top.
-    if (this.mocap?.active) {
-      this.mixer.clearAll(['blink']);
-      this._updateBlink(dt);
-      this.mixer.update(dt);
-      this.mocap.updatePose(dt);
-      this._sceneY = damp(this._sceneY, this.mocap.hipsOffset, 6, dt);
-      this.vrm.scene.position.y = this._sceneY;
-      this.vrm.update(dt);
-      return;
-    }
 
     // Idle VRMA mode: the AnimationMixer drives the pose (normalized bones),
     // so all manual pose writes below are skipped while it runs.

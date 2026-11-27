@@ -1,6 +1,6 @@
 ---
 name: live3d-pet
-description: 控制 AI Live3D 桌面宠物（项目 D:\cc\codex\ai-live3d）：启动/显示/隐藏/退出、切换 VRM 模型、切换待机动画、单次播放动作（打招呼/跳舞/惊讶/坐下等 126 个 VRMA）、转身朝向、开启/关闭摄像头身体动捕（桌宠实时模仿摄像头前的人体动作）。当用户说"让桌宠跳个舞/打个招呼/被戳一下"、"打开/隐藏/关掉桌宠"、"给桌宠换个模型/换个动作"、"让桌宠模仿我的动作"或要演示桌宠时使用。
+description: 控制 AI Live3D 桌面宠物（项目 D:\cc\codex\ai-live3d）：启动/显示/隐藏/退出、切换 VRM 模型、切换待机动画、单次播放动作（打招呼/跳舞/惊讶/坐下等 126 个 VRMA）、转身朝向。当用户说"让桌宠跳个舞/打个招呼/被戳一下"、"打开/隐藏/关掉桌宠"、"给桌宠换个模型/换个动作"或要演示桌宠时使用。
 ---
 
 # AI Live3D 桌宠遥控
@@ -32,8 +32,6 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello
 | `--animation <名称\|none>` | 切换**常驻待机动画**；`none` = 手写待机（呼吸/眨眼/视线跟随） |
 | `--model <名称或绝对路径>` | 切换 `models/` 里的 VRM 模型 |
 | `--facing <角度>` | 转身：0 正面 / 45 / 90 侧面 / 135 / 180 背面 |
-| `--mocap <on\|off\|toggle>` | **摄像头身体动捕**：桌宠实时模仿摄像头前的身体动作（右上角红徽标 = 开启中，点击可关；开启时自动弹出「动捕预览」小窗显示摄像头画面 + 追踪骨骼叠加，右键菜单 `Skeleton View` 可开关；动捕期间 `--play`/摸头/戳等动作类命令会被忽略） |
-| `--camera <名称\|default>` | 选动捕摄像头：设备标签子串匹配（先 `--mocap on` 一次枚举出列表，日志 `[mocap] devices` 可查标签），如 `--camera integrated` / `--camera 4k` / `--camera obs`；`default` 恢复系统默认；选择持久化，切换即时生效（预览窗口同步换源） |
 | `--hide` / `--show` | 隐藏 / 显示窗口 |
 | `--devtools` | 切换 DevTools |
 | `--quit` | 退出桌宠 |
@@ -61,7 +59,6 @@ tail -n 15 /d/cc/codex/ai-live3d/ai-live3d.log
 
 - 命令已收到：`[cmd] second-instance: {...}`（或 `launch`）
 - 播放成功：`[ai-live3d] play-once: <路径>`；换动画成功：`animation loaded`；换模型成功：`model loaded`
-- 动捕开启成功：`[mocap] tracking started`；关闭：`[mocap] tracking stopped`；摄像头失败：`[ai-live3d] mocap start failed`
 - 名称没匹配上：`[cmd] play: animation not found: <名称>` → 用 `ls` 查准确文件名重试
 - 桌宠不可见：多半是模型出画或渲染错误，翻日志找 `[error]` / `render-process-gone`
 - `--quit` 之后再用 `--play` 会重新完整启动（等模型加载完才播，属正常）

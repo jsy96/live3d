@@ -3,7 +3,6 @@ import { createViewer, loadVRM } from './core/viewer.js';
 import { ExpressionMixer } from './core/expression.js';
 import { Animator } from './core/animator.js';
 import { VRMAPlayer } from './core/vrma.js';
-import { MocapController } from './core/mocap.js';
 import { HitTester } from './interaction/hit-test.js';
 import { MouseInteractor } from './interaction/mouse.js';
 import { platform } from './platform.js';
@@ -39,30 +38,6 @@ async function main() {
   let currentVrm = null;
   let pendingAnimation; // undefined = not initialized; null = none; entry = waiting for model
 
-  // Camera mocap (webcam pose tracking -> model mimics the user). The wasm
-  // LOADER must be <script>-loaded same-origin, so it uses a relative file
-  // URL next to index.html; the .task model is fetched through the
-  // live3d-model:// protocol like every other bundled asset (browsers fall
-  // back to a plain relative URL when the desktop bridge is absent).
-  const mocap = new MocapController({
-    wasmBase: '../assets/mediapipe/wasm',
-    modelUrl: platform.isDesktop
-      ? `live3d-model://${encodeURIComponent('$app/assets/mediapipe/pose_landmarker_full.task')}`
-      : '../assets/mediapipe/pose_landmarker_full.task',
-  });
-  const mocapBadge = document.getElementById('mocap-badge');
-  // Per-detection landmarks for the skeleton preview window (relayed by the
-  // main process; ignored there when no preview window is open).
-  mocap.onLandmarks = (flat) => platform.sendMocapLandmarks(flat);
-  // Camera picker: report the device list (labels fill in once a camera has
-  // opened); menu/CLI selection arrives as onMocapCamera events. The saved
-  // choice is restored before the first start.
-  mocap.onDevices = (list, selected) => platform.sendMocapDevices(list, selected);
-  platform.onMocapCamera((id) => mocap.setCamera(id));
-  platform.getMocapCamera().then((id) => {
-    if (id) mocap.cameraId = id;
-  });
-
   function showPanel(message) {
     panelError.textContent = message || '';
     panel.classList.remove('hidden');
@@ -72,10 +47,8 @@ async function main() {
     try {
       const url = typeof entry === 'string' ? entry : entry.url;
       const vrm = await loadVRM(viewer, url);
-      mocap.attach(vrm); // rebuild the mocap rig for this model
       const mixer = new ExpressionMixer(vrm);
       animator = new Animator(vrm, mixer);
-      animator.mocap = mocap;
       hitTester = new HitTester(vrm);
       if (interactor) interactor.dispose();
       interactor = new MouseInteractor(viewer, hitTester, animator, {
@@ -245,42 +218,6 @@ async function main() {
   platform.onAnimationChanged((entry) => loadAnimation(entry));
   platform.onFacingChanged((deg) => viewer.setFacing(deg));
   platform.onPlayOnce(playOnce);
-
-  // Camera mocap: menu / CLI / badge requests all round-trip through the
-  // main process; the renderer reports the ACTUAL state back (camera start
-  // can fail), which is what the menu checkmark shows.
-  function updateMocapBadge() {
-    mocapBadge.classList.toggle('hidden', !mocap.active);
-  }
-  async function setMocapEnabled(enabled) {
-    if (enabled === mocap.active) {
-      platform.reportMocapState(mocap.active);
-      updateMocapBadge();
-      return;
-    }
-    if (enabled) {
-      try {
-        await mocap.start();
-        animator?.beginMocap();
-      } catch (err) {
-        console.error(`[ai-live3d] mocap start failed: ${err?.message || err}`);
-        showPanel(`摄像头动捕启动失败：${err?.message || err}`);
-        setTimeout(() => {
-          if (currentVrm) panel.classList.add('hidden');
-        }, 6000);
-      }
-    } else {
-      mocap.stop();
-      animator?.endMocap();
-    }
-    platform.reportMocapState(mocap.active);
-    updateMocapBadge();
-  }
-  platform.onMocapChanged((enabled) => {
-    setMocapEnabled(enabled);
-  });
-  platform.onMocapMirror((on) => mocap.setMirror(on));
-  mocapBadge.addEventListener('click', () => platform.requestMocap(false));
   // Startup done: the main process can now deliver queued CLI commands.
   platform.ready();
 
@@ -317,20 +254,6 @@ async function main() {
   }
   function updateInteractiveRegion() {
     let region = hitTester ? hitTester.getRegion() : null;
-    // The mocap badge is clickable (stops tracking) — it must be part of the
-    // interactive region or clicks would fall through to the desktop.
-    if (!mocapBadge.classList.contains('hidden')) {
-      const r = mocapBadge.getBoundingClientRect();
-      if (region) {
-        const x0 = Math.min(region.x, r.left);
-        const y0 = Math.min(region.y, r.top);
-        const x1 = Math.max(region.x + region.w, r.right);
-        const y1 = Math.max(region.y + region.h, r.bottom);
-        region = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-      } else {
-        region = { x: r.left, y: r.top, w: r.width, h: r.height };
-      }
-    }
     if (!region && !panel.classList.contains('hidden')) {
       const r = panel.getBoundingClientRect();
       region = { x: r.left, y: r.top, w: r.width, h: r.height };
