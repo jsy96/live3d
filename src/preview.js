@@ -1,14 +1,13 @@
 // Skeleton preview window for camera mocap.
 //
-// Shows the webcam image with the tracked 33-keypoint pose skeleton drawn
-// on top (MediaPipe's classic visualization style: dimmed video backdrop,
-// cyan bone edges, white joints, low-visibility joints in red).
+// PURE SKELETON VIEW: renders only the tracked 33-keypoint pose on a dark
+// backdrop — no camera image is shown or even opened (the preview owns no
+// MediaStream at all). Landmark data flows from the pet renderer (which
+// owns the tracking camera + landmarker) via ipc 'mocap:landmarks' relayed
+// by the main process.
 //
-// Data flow: pet renderer (which owns the tracking camera + landmarker)
-// -> ipc 'mocap:landmarks' -> main process relay -> this window. The
-// preview opens its own DISPLAY-ONLY camera stream so video pixels never
-// travel over IPC and the tracking pipeline is untouched. If the second
-// camera open fails, the skeleton is still drawn over a black background.
+// Style: MediaPipe-classic skeleton — cyan bone edges, white joints,
+// low-visibility joints in red, unseen joints omitted.
 
 import { PoseLandmarker } from '@mediapipe/tasks-vision';
 
@@ -16,73 +15,31 @@ const CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS; // [{start, end}]
 const JOINT_COUNT = 33;
 const DATA_FRESH_MS = 1500; // older landmark data = person lost
 
-const video = document.getElementById('cam');
 const canvas = document.getElementById('skeleton');
 const statusEl = document.getElementById('status');
 const ctx = canvas.getContext('2d');
 
 let lm = null; // Float32Array(JOINT_COUNT * 3): x, y, visibility
 let lastData = 0; // performance.now() of the last landmark update
-let camOk = false;
 let updates = 0; // landmark updates counted for the Hz readout
 let hzWindowStart = performance.now();
 let hz = 0;
 
-// Mirror view, like looking into a mirror: the video element flips X via
-// CSS and landmarks are drawn at (1 - x). This matches the pet's default
-// mirror mode, so "my left hand" is on the same side in both views.
-
-async function openCamera(preferred) {
-  try {
-    video.srcObject?.getTracks().forEach((t) => t.stop());
-  } catch {
-    // no stream yet
-  }
-  const base = { width: 640, height: 480 };
-  const attempt = (dev) =>
-    navigator.mediaDevices.getUserMedia({
-      video: dev ? { ...base, deviceId: { exact: dev } } : { ...base, facingMode: 'user' },
-      audio: false,
-    });
-  try {
-    const stream = await attempt(preferred);
-    video.srcObject = stream;
-    await video.play();
-    camOk = true;
-  } catch (err) {
-    if (preferred) {
-      // Saved device unplugged/busy: fall back to the system default.
-      console.error(`[preview] camera ${preferred.slice(0, 8)} failed (${err.message}); using default`);
-      try {
-        const stream = await attempt(null);
-        video.srcObject = stream;
-        await video.play();
-        camOk = true;
-        return;
-      } catch {
-        // fall through to the failure state below
-      }
-    }
-    console.error('[preview] camera open failed; skeleton-only mode');
-    camOk = false;
-  }
-}
-
-/** Map a normalized landmark to canvas px with letterboxing + mirroring. */
+// Landmarks are normalized to the camera's 4:3 frame; letterbox that into
+// the canvas so the skeleton keeps its proportions at any window size.
+// Mirrored X (1 - x) matches the pet's mirror mode.
 function project(nx, ny) {
-  // Video display rect (object-fit: contain) inside the canvas.
-  const vw = camOk && video.videoWidth ? video.videoWidth : 4;
-  const vh = camOk && video.videoHeight ? video.videoHeight : 3;
-  const s = Math.min(canvas.width / vw, canvas.height / vh);
-  const ox = (canvas.width - vw * s) / 2;
-  const oy = (canvas.height - vh * s) / 2;
-  return [ox + (1 - nx) * vw * s, oy + ny * vh * s];
+  const s = Math.min(canvas.width / 4, canvas.height / 3);
+  const ox = (canvas.width - 4 * s) / 2;
+  const oy = (canvas.height - 3 * s) / 2;
+  return [ox + (1 - nx) * 4 * s, oy + ny * 3 * s];
 }
 
 function drawSkeleton() {
   const fresh = lm && performance.now() - lastData < DATA_FRESH_MS;
   if (!fresh) return;
-  ctx.lineWidth = Math.max(2, canvas.width / 160);
+  const scale = Math.min(canvas.width / 4, canvas.height / 3);
+  ctx.lineWidth = Math.max(2, scale / 45);
   ctx.lineCap = 'round';
   ctx.strokeStyle = 'rgba(85, 220, 255, 0.9)';
   ctx.beginPath();
@@ -100,7 +57,7 @@ function drawSkeleton() {
   }
   ctx.stroke();
 
-  const r = Math.max(2.5, canvas.width / 110);
+  const r = Math.max(2.5, scale / 30);
   for (let i = 0; i < JOINT_COUNT; i++) {
     const v = lm[i * 3 + 2] ?? 1;
     if (v < 0.25) continue; // unseen joint: no dot
@@ -113,46 +70,33 @@ function drawSkeleton() {
 }
 
 function updateStatus(tracking) {
-  let text;
-  if (!camOk) {
-    text = tracking ? `仅骨骼（摄像头打开失败）· ${hz}/s` : '摄像头打开失败，仅骨骼显示';
-  } else if (tracking) {
-    text = `● 跟踪中 · ${hz}/s`;
-  } else {
-    text = '未检测到人体';
-  }
+  const text = tracking ? `● 跟踪中 · ${hz}/s` : '未检测到人体';
   if (statusEl.textContent !== text) statusEl.textContent = text;
   statusEl.classList.toggle('ok', tracking);
-}
-
-function frame() {
-  requestAnimationFrame(frame);
-  fitCanvasIfChanged();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Dim the camera image so the skeleton pops.
-  if (camOk && video.videoWidth) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  const fresh = lm && performance.now() - lastData < DATA_FRESH_MS;
-  drawSkeleton();
-  updateStatus(!!fresh);
 }
 
 let lastCanvasW = -1;
 let lastCanvasH = -1;
 function fitCanvasIfChanged() {
-  const w = Math.round((canvas.clientWidth || 320) * Math.min(window.devicePixelRatio || 1, 2));
-  const h = Math.round((canvas.clientHeight || 240) * Math.min(window.devicePixelRatio || 1, 2));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round((canvas.clientWidth || 320) * dpr);
+  const h = Math.round((canvas.clientHeight || 240) * dpr);
   if (w !== lastCanvasW || h !== lastCanvasH) {
     lastCanvasW = w;
     lastCanvasH = h;
     canvas.width = w;
     canvas.height = h;
   }
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  fitCanvasIfChanged();
+  ctx.fillStyle = '#15171c';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawSkeleton();
+  const fresh = lm && performance.now() - lastData < DATA_FRESH_MS;
+  updateStatus(!!fresh);
 }
 
 // Landmark data from the tracking pipeline (via main-process relay).
@@ -171,15 +115,5 @@ window.live3d?.onMocapLandmarks?.((data) => {
     lm = null; // person lost
   }
 });
-
-// Release the display camera when the window closes.
-window.addEventListener('pagehide', () => {
-  video.srcObject?.getTracks().forEach((t) => t.stop());
-});
-
-// Open the SAME camera the tracking pipeline selected (persisted by the
-// main process), and follow live camera switches while tracking.
-window.live3d?.getMocapCamera?.().then((id) => openCamera(id ?? null));
-window.live3d?.onMocapCamera?.((id) => openCamera(id ?? null));
 
 frame();

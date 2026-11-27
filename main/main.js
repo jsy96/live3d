@@ -115,7 +115,6 @@ function setMocapCamera(id) {
   mocapCameraId = id ?? null;
   saveCameraPref(mocapCameraId);
   win?.webContents.send('mocap:camera', mocapCameraId);
-  mocapPreviewWin?.webContents.send('mocap:camera', mocapCameraId);
   appendLog(`[mocap] camera set: ${mocapCameraId ?? 'default'}`);
 }
 

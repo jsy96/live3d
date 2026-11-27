@@ -124,24 +124,18 @@ body.grabbing {
   pointer-events: none;
 }
 
-/* --- skeleton preview window (mocap) --- */
+/* --- skeleton preview window (mocap): pure skeleton view, no camera image --- */
 
 body.preview {
-  background: #111;
+  background: #15171c;
   overflow: hidden;
 }
 
-body.preview video,
 body.preview canvas {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-}
-
-body.preview video {
-  transform: scaleX(-1); /* mirror view, matches the pet's mirror mode */
 }
 
 body.preview #status {

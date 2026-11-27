@@ -3,10 +3,14 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261127-3**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261127-4**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261127-4**（2026-11-27）
+  - 修复：**VRM 0.x 模型动捕前后/左右全反**（用户实测「双手在身前，桌宠总放身后」）——根因：`VRMUtils.rotateVRM0` 的 180° 校正写在 `vrm.scene.rotation` 上，**永远到不了骨骼局部空间**；VRM 0.x 模型（AvatarSample 系默认模型）的 normalized 骨骼静息帧实为「面朝 $-Z$、左手 $-X$」，而解算器按 VRM1 惯例（面朝 $+Z$、左手 $+X$）映射追踪方向 → 一切含前后/左右分量的目标全部镜像：手臂前伸变背后、左右手互换。修复：`attach()` 按 `vrm.meta.metaVersion === '0'`（与 rotateVRM0 同款判定）设朝向符号 `orient`，地标映射改为 `scene.x = ±orient·mp.x`（随镜像）、`scene.z = -orient·mp.z`；换模型自动重映射；attach 落日志 `model frame: VRM0/VRM1`；躯干/蹲起不受影响（纯 y 分量，此前也正因此只有四肢前后错）
+  - **预览窗口改纯骨骼视图**：不再显示摄像头画面（用户要求）——预览页彻底移除 `<video>` 与第二路 `getUserMedia`（预览零摄像头占用，`media` 权限、选摄像头同步、`pagehide` 释放逻辑一并删除；`setMocapCamera` 不再向预览窗广播），深色底（#15171c）+ 4:3 letterbox 骨骼绘制（镜像 X 与桌宠镜像模式一致），线宽/关节点半径随窗口尺寸自适应
+  - 验证：解算器回归测试全过（mock 无 meta 走 VRM1 分支不变）；重启实例日志确认 `model frame: VRM0 (-Z front, mirrored mapping)` 生效；预览窗口截图视觉确认纯深色背景无摄像头画面、状态条「未检测到人体」正常；**前后方向修复需真人上镜验收**（当前默认模型 AvatarSample_A 即 VRM0）
 - **v1.0.261127-3**（2026-11-27）
   - **摄像头选择器**：此前动捕写死系统默认摄像头（本机 3 个视频设备时会开错）。右键菜单 mocap 区块新增 `Camera` 子菜单——`Default (auto)` + 枚举出的 videoinput 设备列表（勾选单选；设备标签需 Chromium 授予过媒体权限后才可见，故首次动捕启动后列表才填充，未启动时显示提示项）；热插拔监听 `devicechange` 自动刷新菜单
   - **切换即生效 + 持久化**：菜单或 CLI `--camera <名称子串>` 选择后——追踪流实时重开（landmarker 不重建，`deviceId: {exact}` 打开，选定设备失效自动回退默认并同步状态）、预览窗口显示流同步重开（预览永远与追踪同一摄像头）、选择写入 `%APPDATA%/ai-live3d/mocap-camera.json` 跨重启生效（渲染层启动时 `getMocapCamera` 恢复）；CLI 匹配规则 = 设备标签忽略大小写子串（如 `--camera integrated`、`--camera 4k`、`--camera obs`），`default/auto/none` 恢复默认，未匹配落 `[cmd]` 日志并列出已知设备
@@ -182,7 +186,7 @@ npm start     # 构建 renderer + 启动桌宠
    - **戳**：快速点击（<300ms 且移动 <6px）→ 受惊弹跳
    - **双击**：欢呼跳跃 + 挥手
    - 模型以外区域鼠标完全穿透，不影响正常使用电脑
-4. **摄像头动捕（身体模仿）**：右键菜单勾选 `Camera Mocap`（或 CLI `--mocap on`），站到摄像头前上半身入镜即可——躯干/头颈/手臂逐段实时模仿，蹲下整体下沉；右上角红色「🎥 动捕中」徽标点击关闭；`Mirror Mode` 勾选切换镜面模仿（默认）与同侧模仿；**动捕开启时自动弹出「动捕预览」窗口**显示摄像头画面 + 追踪到的骨骼叠加（`Skeleton View` 勾选项可开/关，点窗口 X 只收窗不停动捕）；多摄像头时用 `Camera` 子菜单或 CLI `--camera <名称>` 选择（选择持久化，预览与追踪同步切换）。动捕期间动作类互动与 `--play` 自动让位，拖拽移动窗口不受影响
+4. **摄像头动捕（身体模仿）**：右键菜单勾选 `Camera Mocap`（或 CLI `--mocap on`），站到摄像头前上半身入镜即可——躯干/头颈/手臂逐段实时模仿，蹲下整体下沉；右上角红色「🎥 动捕中」徽标点击关闭；`Mirror Mode` 勾选切换镜面模仿（默认）与同侧模仿；**动捕开启时自动弹出「动捕预览」窗口，纯骨骼视图**（深色底 + 追踪骨骼叠加，不显示摄像头画面；`Skeleton View` 勾选项可开/关，点窗口 X 只收窗不停动捕）；多摄像头时用 `Camera` 子菜单或 CLI `--camera <名称>` 选择（选择持久化）。动捕期间动作类互动与 `--play` 自动让位，拖拽移动窗口不受影响
 3. 托盘图标：换模型 / 显示隐藏 / DevTools / 退出
 4. 调试：`electron . --args --` 后在 URL 加 `?debug=1`（或托盘菜单 Open DevTools）显示版本/FPS/状态角标
 
@@ -227,6 +231,6 @@ scripts/make-portable.bat    # 产出 dist/ai-live3d-portable-<版本>.zip（约
 ## 摄像头动捕补充说明
 
 - 资源位置：`assets/mediapipe/`（wasm 运行时 + `pose_landmarker_full.task`，均已入 git，便携包自动携带）。模型官方源：`https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker/full/float16/latest/pose_landmarker_full.task`（国内直连慢但可断点续传，`curl -C -` 重试即可）
-- 使用建议：距摄像头 1~2m、上半身完整入镜效果最佳；腿出镜时自动下垂不冻结；头部转动幅度大时（>49°）被钳制以防颈部扭断观感
+- 使用建议：距摄像头 1~2m、上半身完整入镜效果最佳；腿出镜时自动下垂不冻结；头部转动幅度大时（>49°）被钳制以防颈部扭断观感；VRM 0.x 与 1.x 模型的骨骼朝向系差异已自动适配（`attach` 时按 `metaVersion` 判定，日志可见 `model frame:` 行）
 - 已知取舍：上臂无扭转量（twist）解算，肘部朝向极端姿势下可能略歪——如需更高质量可后续引入 Kalidokit 或手部 21 关键点细化
 - 隐私：画面仅在本地 wasm 推理，不上传任何数据；关闭动捕立即停止摄像头（`stream.getTracks().stop()`）

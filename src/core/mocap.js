@@ -14,11 +14,13 @@
 // positions), so there is no axis/sign guessing: the solver records which way
 // each bone points at rest and rotates that direction onto the tracked one.
 //
-// Coordinate mapping (MediaPipe world -> VRM scene space):
+// Coordinate mapping (MediaPipe world -> model AUTHORED bone frame):
 //   mp.x: + = subject's left | mp.y: - = up | mp.z: - = toward the camera
-//   scene: +Y up, +Z toward the viewer (model faces the viewer)
-//   mirror ON  -> scene.x = -mp.x (pet acts as the user's mirror image)
-//   mirror OFF -> scene.x = +mp.x (pet imitates with same-named limbs)
+//   authored frame: +Y up; front = orient*(+Z), model-left = orient*(+X),
+//   where orient = +1 for VRM 1.x and -1 for VRM 0.x (rotateVRM0 puts its
+//   180° correction on vrm.scene, which never reaches bone-local space).
+//   mirror ON  -> person-left maps to the model's RIGHT (mirror image)
+//   mirror OFF -> person-left maps to the model's LEFT (same-named limbs)
 
 import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
@@ -147,6 +149,13 @@ export class MocapController {
     this._lastVideoTime = -1;
     this._personSeen = false;
     this._flat = null; // Float32Array(99) reused for onLandmarks payloads
+    // Authored-frame orientation sign, set per model in attach():
+    //   +1 (VRM 1.x): model faces +Z, model-left is +X in scene-local space
+    //   -1 (VRM 0.x): rotateVRM0 leaves the RAW bones in a frame where the
+    //     model faces -Z with model-left at -X; landmark mapping must use
+    //     these authored axes or every forward/back direction comes out
+    //     mirrored (arms aimed "in front" ended up behind the back).
+    this._orient = 1;
     this._calib = []; // standing-height samples (scene-space hips y)
     this._baselineY = null;
     this._warnedDetect = false;
@@ -199,6 +208,16 @@ export class MocapController {
     this._conf = new Map();
     const hb = vrm?.humanoid;
     if (!hb) return;
+
+    // Same check VRMUtils.rotateVRM0 uses: VRM 0.x raw bones live in a
+    // 180°-rotated authored frame (the correction sits on vrm.scene, ABOVE
+    // the normalized rig, and never reaches bone-local space).
+    const s = vrm.meta?.metaVersion === '0' ? -1 : 1;
+    if (s !== this._orient) {
+      this._orient = s;
+      this._pts = null; // re-map incoming landmarks from scratch
+    }
+    this._log(`model frame: ${s === 1 ? 'VRM1 (+Z front)' : 'VRM0 (-Z front, mirrored mapping)'}`);
 
     for (const spec of DRIVEN) {
       const node = hb.getNormalizedBoneNode(spec.bone);
@@ -416,14 +435,19 @@ export class MocapController {
       this._vis = new Float64Array(33).fill(1);
     }
     const a = 1 - Math.exp(-dt * SMOOTH_HZ);
-    const mx = this.mirror ? -1 : 1;
+    // Person (mp): x+ = their left, y- = up, z- = toward camera. Model
+    // authored frame: front = orient·(+Z), model-left = orient·(+X).
+    //   non-mirror: person-left -> model-left      mirror: -> model-right
+    const s = this._orient;
+    const mx = this.mirror ? -s : s;
+    const mz = -s;
     for (let i = 0; i < 33; i++) {
       const p = lm[i];
       if (!p || !Number.isFinite(p.x)) continue;
       const tgt = this._pts[i];
       tgt.x += (mx * p.x - tgt.x) * a;
       tgt.y += (-p.y - tgt.y) * a;
-      tgt.z += (-p.z - tgt.z) * a;
+      tgt.z += (mz * p.z - tgt.z) * a;
       this._vis[i] = p.visibility ?? 1;
     }
   }
