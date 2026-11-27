@@ -4,7 +4,7 @@
   "description": "AI 3D desktop pet (VRM + Electron), designed to roam between desktop and phone",
   "main": "main/main.js",
   "scripts": {
-    "build": "esbuild src/app.js --bundle --format=iife --outfile=dist/bundle.js --log-level=warning",
+    "build": "esbuild src/app.js --bundle --format=iife --outfile=dist/bundle.js --log-level=warning && esbuild src/preview.js --bundle --format=iife --outfile=dist/preview-bundle.js --log-level=warning",
     "test:mocap": "esbuild scripts/test-mocap-solver.mjs --bundle --platform=node --format=esm --outfile=dist/test-mocap.mjs --log-level=warning && node dist/test-mocap.mjs",
     "start": "npm run build && electron .",
     "start:fast": "electron ."

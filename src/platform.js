@@ -86,6 +86,11 @@ export const platform = {
   reportMocapState(active) {
     if (bridge) bridge.reportMocapState(active);
   },
+  // Normalized pose landmarks for the skeleton preview window (main process
+  // relays them to the preview BrowserWindow when one is open).
+  sendMocapLandmarks(data) {
+    if (bridge) bridge.sendMocapLandmarks(data);
+  },
 
   // Renderer startup finished; lets the main process flush queued CLI commands.
   ready() {

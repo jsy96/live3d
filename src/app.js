@@ -51,6 +51,9 @@ async function main() {
       : '../assets/mediapipe/pose_landmarker_full.task',
   });
   const mocapBadge = document.getElementById('mocap-badge');
+  // Per-detection landmarks for the skeleton preview window (relayed by the
+  // main process; ignored there when no preview window is open).
+  mocap.onLandmarks = (flat) => platform.sendMocapLandmarks(flat);
 
   function showPanel(message) {
     panelError.textContent = message || '';

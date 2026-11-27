@@ -80,10 +80,40 @@ let currentAnimationPath = null;
 // fail); menu / CLI / badge requests are relayed through setMocap().
 let mocapActive = false;
 let mocapMirror = true;
+// Skeleton preview window: opens automatically while mocap runs, closable
+// any time (X or menu) without stopping the tracking itself.
+let mocapPreviewWin = null;
 
 /** Ask the renderer to start/stop webcam pose tracking. */
 function setMocap(enabled) {
   win?.webContents.send('mocap:set', !!enabled);
+}
+
+function openMocapPreview() {
+  if (mocapPreviewWin) return;
+  mocapPreviewWin = new BrowserWindow({
+    width: 400,
+    height: 330,
+    title: '动捕预览 · Mocap Skeleton',
+    alwaysOnTop: true,
+    resizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      // keep drawing even when the pet window has no focus
+      backgroundThrottling: false,
+    },
+  });
+  mocapPreviewWin.loadFile(path.join(__dirname, '..', 'src', 'preview.html'));
+  mocapPreviewWin.on('closed', () => {
+    mocapPreviewWin = null;
+  });
+}
+
+function closeMocapPreview() {
+  mocapPreviewWin?.close();
 }
 
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
@@ -202,12 +232,19 @@ function registerIpc() {
   ipcMain.on('app:toggleDevTools', () => win?.webContents.toggleDevTools());
   ipcMain.on('app:quit', () => app.quit());
 
-  // Camera mocap state bridge (see mocapActive comment above).
+  // Camera mocap state bridge (see mocapActive comment above). The skeleton
+  // preview window follows the mocap lifecycle automatically.
   ipcMain.on('mocap:state', (_event, active) => {
     mocapActive = !!active;
+    if (mocapActive) openMocapPreview();
+    else closeMocapPreview();
   });
   ipcMain.on('mocap:request', (_event, enabled) => {
     setMocap(!!enabled);
+  });
+  // Landmark relay: tracking renderer -> preview window (no-op when closed).
+  ipcMain.on('mocap:landmarks', (_event, data) => {
+    mocapPreviewWin?.webContents.send('mocap:landmarks', data);
   });
 
   // Renderer reports which model it actually loaded (start-up picks models[0]).
@@ -276,6 +313,13 @@ function registerIpc() {
         mocapMirror = !mocapMirror;
         win?.webContents.send('mocap:mirror', mocapMirror);
       },
+    });
+    template.push({
+      label: 'Skeleton View',
+      type: 'checkbox',
+      checked: !!mocapPreviewWin,
+      enabled: mocapActive, // only meaningful while tracking runs
+      click: () => (mocapPreviewWin ? closeMocapPreview() : openMocapPreview()),
     });
 
     // Facing is wheel-controlled only (hover + scroll steps 45 degrees);

@@ -123,6 +123,11 @@ export class MocapController {
     this.active = false;
     this.mirror = true; // mirror mode: pet acts as the user's reflection
     this.hipsOffset = 0; // target hips-height offset (m), Animator follows it
+    // Optional per-detection callback for the skeleton preview window:
+    // cb(Float32Array(99) [x,y,visibility x33] | null). Receives the
+    // NORMALIZED image-space landmarks (matches the camera picture), not
+    // the world-space ones the solver uses.
+    this.onLandmarks = null;
 
     this.vrm = null;
     this.video = null;
@@ -136,6 +141,7 @@ export class MocapController {
     this._vis = null; // Float64Array(33)
     this._lastVideoTime = -1;
     this._personSeen = false;
+    this._flat = null; // Float32Array(99) reused for onLandmarks payloads
     this._calib = []; // standing-height samples (scene-space hips y)
     this._baselineY = null;
     this._warnedDetect = false;
@@ -322,9 +328,27 @@ export class MocapController {
     const lm = res?.worldLandmarks?.[0];
     if (!lm || lm.length < 33) {
       this._personSeen = false;
+      this.onLandmarks?.(null); // tell the preview the person was lost
       return;
     }
     this._personSeen = true;
+
+    // Normalized image-space landmarks for the skeleton preview window.
+    if (this.onLandmarks) {
+      const lm2 = res.landmarks?.[0];
+      if (lm2 && lm2.length >= 33) {
+        if (!this._flat) this._flat = new Float32Array(33 * 3);
+        for (let i = 0; i < 33; i++) {
+          const p = lm2[i];
+          this._flat[i * 3] = Number.isFinite(p?.x) ? p.x : 0;
+          this._flat[i * 3 + 1] = Number.isFinite(p?.y) ? p.y : 0;
+          this._flat[i * 3 + 2] = p?.visibility ?? 1;
+        }
+        this.onLandmarks(this._flat);
+      } else {
+        this.onLandmarks(null);
+      }
+    }
 
     if (!this._pts) {
       this._pts = Array.from({ length: 33 }, () => new THREE.Vector3());

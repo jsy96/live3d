@@ -41,6 +41,7 @@ xcopy /e /i /q models "%STAGE%\models" >nul || exit /b 1
 xcopy /e /i /q animations "%STAGE%\animations" >nul || exit /b 1
 mkdir "%STAGE%\dist" 2>nul
 copy /y dist\bundle.js "%STAGE%\dist\" >nul || exit /b 1
+copy /y dist\preview-bundle.js "%STAGE%\dist\" >nul || exit /b 1
 copy /y package.json "%STAGE%\" >nul || exit /b 1
 copy /y start-pet.bat "%STAGE%\" >nul || exit /b 1
 copy /y README.md "%STAGE%\" >nul || exit /b 1

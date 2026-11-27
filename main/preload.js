@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('live3d', {
   },
   requestMocap: (enabled) => ipcRenderer.send('mocap:request', enabled),
   reportMocapState: (active) => ipcRenderer.send('mocap:state', active),
+  // Skeleton preview: tracking renderer -> main -> preview window.
+  sendMocapLandmarks: (data) => ipcRenderer.send('mocap:landmarks', data),
+  onMocapLandmarks: (cb) => {
+    ipcRenderer.on('mocap:landmarks', (_event, data) => cb(data));
+  },
   // Renderer startup finished; the main process flushes queued CLI commands.
   ready: () => ipcRenderer.send('app:ready'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),
