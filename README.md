@@ -3,10 +3,14 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261127-2**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261127-3**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261127-3**（2026-11-27）
+  - **摄像头选择器**：此前动捕写死系统默认摄像头（本机 3 个视频设备时会开错）。右键菜单 mocap 区块新增 `Camera` 子菜单——`Default (auto)` + 枚举出的 videoinput 设备列表（勾选单选；设备标签需 Chromium 授予过媒体权限后才可见，故首次动捕启动后列表才填充，未启动时显示提示项）；热插拔监听 `devicechange` 自动刷新菜单
+  - **切换即生效 + 持久化**：菜单或 CLI `--camera <名称子串>` 选择后——追踪流实时重开（landmarker 不重建，`deviceId: {exact}` 打开，选定设备失效自动回退默认并同步状态）、预览窗口显示流同步重开（预览永远与追踪同一摄像头）、选择写入 `%APPDATA%/ai-live3d/mocap-camera.json` 跨重启生效（渲染层启动时 `getMocapCamera` 恢复）；CLI 匹配规则 = 设备标签忽略大小写子串（如 `--camera integrated`、`--camera 4k`、`--camera obs`），`default/auto/none` 恢复默认，未匹配落 `[cmd]` 日志并列出已知设备
+  - 实测：枚举上报 `4K AutoFocus Webcam | Integrated Camera | OBS Virtual Camera` 三设备；`--camera integrated` 切换 → 渲染层流重开 + 持久化文件落盘；`--camera default` 恢复；解算器回归测试全过。注：验证时重启了正在运行的旧构建实例（新构建需重启生效）
 - **v1.0.261127-2**（2026-11-27）
   - **动捕骨骼预览窗口**：动捕开启时自动弹出置顶小窗「动捕预览 · Mocap Skeleton」（400×330，可缩放），显示摄像头画面 + 半透明暗色遮罩 + 叠加绘制的 33 关键点骨骼（MediaPipe 经典样式：青色骨连线、白色关节点、可见度 <0.55 关节转红、<0.25 不画），镜像显示与桌宠镜像模式一致；左下角状态条显示「● 跟踪中 · N/s」/「未检测到人体」（1.5s 无数据判定丢失）；关闭动捕窗口自动收起
   - **数据通路零侵入**：追踪渲染层把**归一化图像坐标**关键点（与摄像头画面几何一致，区别于解算器用的世界坐标）按检测帧率经 `mocap:landmarks` IPC → 主进程转发 → 预览窗口（Float32Array(99) 结构化克隆，~1KB×30/s，无像素传输）；预览窗口自开一路**仅显示用**摄像头流（不参与推理，视频帧不走 IPC，追踪管线完全不受影响），第二路流打开失败时退化为纯黑底骨骼显示
@@ -178,7 +182,7 @@ npm start     # 构建 renderer + 启动桌宠
    - **戳**：快速点击（<300ms 且移动 <6px）→ 受惊弹跳
    - **双击**：欢呼跳跃 + 挥手
    - 模型以外区域鼠标完全穿透，不影响正常使用电脑
-4. **摄像头动捕（身体模仿）**：右键菜单勾选 `Camera Mocap`（或 CLI `--mocap on`），站到摄像头前上半身入镜即可——躯干/头颈/手臂逐段实时模仿，蹲下整体下沉；右上角红色「🎥 动捕中」徽标点击关闭；`Mirror Mode` 勾选切换镜面模仿（默认）与同侧模仿；**动捕开启时自动弹出「动捕预览」窗口**显示摄像头画面 + 追踪到的骨骼叠加（`Skeleton View` 勾选项可开/关，点窗口 X 只收窗不停动捕）。动捕期间动作类互动与 `--play` 自动让位，拖拽移动窗口不受影响
+4. **摄像头动捕（身体模仿）**：右键菜单勾选 `Camera Mocap`（或 CLI `--mocap on`），站到摄像头前上半身入镜即可——躯干/头颈/手臂逐段实时模仿，蹲下整体下沉；右上角红色「🎥 动捕中」徽标点击关闭；`Mirror Mode` 勾选切换镜面模仿（默认）与同侧模仿；**动捕开启时自动弹出「动捕预览」窗口**显示摄像头画面 + 追踪到的骨骼叠加（`Skeleton View` 勾选项可开/关，点窗口 X 只收窗不停动捕）；多摄像头时用 `Camera` 子菜单或 CLI `--camera <名称>` 选择（选择持久化，预览与追踪同步切换）。动捕期间动作类互动与 `--play` 自动让位，拖拽移动窗口不受影响
 3. 托盘图标：换模型 / 显示隐藏 / DevTools / 退出
 4. 调试：`electron . --args --` 后在 URL 加 `?debug=1`（或托盘菜单 Open DevTools）显示版本/FPS/状态角标
 
@@ -194,6 +198,7 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 ./start-pet.bat --model AvatarSample_B
 ./start-pet.bat --facing 90         # 转身（0/45/90/135/180）
 ./start-pet.bat --mocap on          # 摄像头身体动捕（off 关，toggle 翻转）
+./start-pet.bat --camera integrated # 选摄像头（标签子串匹配；default 恢复默认）
 ./start-pet.bat --hide              # 隐藏（--show 显示，--quit 退出）
 ```
 

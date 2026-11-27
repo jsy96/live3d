@@ -54,6 +54,14 @@ async function main() {
   // Per-detection landmarks for the skeleton preview window (relayed by the
   // main process; ignored there when no preview window is open).
   mocap.onLandmarks = (flat) => platform.sendMocapLandmarks(flat);
+  // Camera picker: report the device list (labels fill in once a camera has
+  // opened); menu/CLI selection arrives as onMocapCamera events. The saved
+  // choice is restored before the first start.
+  mocap.onDevices = (list, selected) => platform.sendMocapDevices(list, selected);
+  platform.onMocapCamera((id) => mocap.setCamera(id));
+  platform.getMocapCamera().then((id) => {
+    if (id) mocap.cameraId = id;
+  });
 
   function showPanel(message) {
     panelError.textContent = message || '';

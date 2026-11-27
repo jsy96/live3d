@@ -32,17 +32,38 @@ let hz = 0;
 // CSS and landmarks are drawn at (1 - x). This matches the pet's default
 // mirror mode, so "my left hand" is on the same side in both views.
 
-async function openCamera() {
+async function openCamera(preferred) {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
+    video.srcObject?.getTracks().forEach((t) => t.stop());
+  } catch {
+    // no stream yet
+  }
+  const base = { width: 640, height: 480 };
+  const attempt = (dev) =>
+    navigator.mediaDevices.getUserMedia({
+      video: dev ? { ...base, deviceId: { exact: dev } } : { ...base, facingMode: 'user' },
       audio: false,
     });
+  try {
+    const stream = await attempt(preferred);
     video.srcObject = stream;
     await video.play();
     camOk = true;
   } catch (err) {
-    console.error(`[preview] camera open failed: ${err.message}`);
+    if (preferred) {
+      // Saved device unplugged/busy: fall back to the system default.
+      console.error(`[preview] camera ${preferred.slice(0, 8)} failed (${err.message}); using default`);
+      try {
+        const stream = await attempt(null);
+        video.srcObject = stream;
+        await video.play();
+        camOk = true;
+        return;
+      } catch {
+        // fall through to the failure state below
+      }
+    }
+    console.error('[preview] camera open failed; skeleton-only mode');
     camOk = false;
   }
 }
@@ -156,5 +177,9 @@ window.addEventListener('pagehide', () => {
   video.srcObject?.getTracks().forEach((t) => t.stop());
 });
 
-openCamera();
+// Open the SAME camera the tracking pipeline selected (persisted by the
+// main process), and follow live camera switches while tracking.
+window.live3d?.getMocapCamera?.().then((id) => openCamera(id ?? null));
+window.live3d?.onMocapCamera?.((id) => openCamera(id ?? null));
+
 frame();

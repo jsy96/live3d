@@ -83,10 +83,40 @@ let mocapMirror = true;
 // Skeleton preview window: opens automatically while mocap runs, closable
 // any time (X or menu) without stopping the tracking itself.
 let mocapPreviewWin = null;
+// Camera picker: videoinput list reported by the renderer (labels only fill
+// in after a camera has opened once) + the persisted selection.
+let mocapDevices = [];
+let mocapCameraId = null;
+
+const cameraPrefFile = () => path.join(app.getPath('userData'), 'mocap-camera.json');
+function loadCameraPref() {
+  try {
+    return JSON.parse(fs.readFileSync(cameraPrefFile(), 'utf8')).deviceId ?? null;
+  } catch {
+    return null;
+  }
+}
+function saveCameraPref(id) {
+  try {
+    fs.writeFileSync(cameraPrefFile(), JSON.stringify({ deviceId: id ?? null }));
+  } catch {
+    // persistence must never break the app
+  }
+}
+mocapCameraId = loadCameraPref();
 
 /** Ask the renderer to start/stop webcam pose tracking. */
 function setMocap(enabled) {
   win?.webContents.send('mocap:set', !!enabled);
+}
+
+/** Select the mocap camera (null = system default); persists + broadcasts. */
+function setMocapCamera(id) {
+  mocapCameraId = id ?? null;
+  saveCameraPref(mocapCameraId);
+  win?.webContents.send('mocap:camera', mocapCameraId);
+  mocapPreviewWin?.webContents.send('mocap:camera', mocapCameraId);
+  appendLog(`[mocap] camera set: ${mocapCameraId ?? 'default'}`);
 }
 
 function openMocapPreview() {
@@ -246,6 +276,20 @@ function registerIpc() {
   ipcMain.on('mocap:landmarks', (_event, data) => {
     mocapPreviewWin?.webContents.send('mocap:landmarks', data);
   });
+  // Camera picker: the renderer reports the device list + what it actually
+  // uses (adopting fallbacks); menus/CLI select via setMocapCamera().
+  ipcMain.handle('mocap:getCamera', () => mocapCameraId);
+  ipcMain.on('mocap:devices', (_event, list, selected) => {
+    mocapDevices = Array.isArray(list) ? list : [];
+    if (selected !== undefined && (selected ?? null) !== mocapCameraId) {
+      // The renderer fell back (e.g. saved device unplugged): follow it.
+      mocapCameraId = selected ?? null;
+      saveCameraPref(mocapCameraId);
+    }
+    appendLog(
+      `[mocap] devices (${mocapDevices.length}): ${mocapDevices.map((d) => d.label).join(' | ') || '-'}`
+    );
+  });
 
   // Renderer reports which model it actually loaded (start-up picks models[0]).
   ipcMain.on('models:current', (_event, modelPath) => {
@@ -321,6 +365,31 @@ function registerIpc() {
       enabled: mocapActive, // only meaningful while tracking runs
       click: () => (mocapPreviewWin ? closeMocapPreview() : openMocapPreview()),
     });
+    // Camera picker: device labels appear after mocap opened a camera once
+    // (Chromium hides them before media permission is exercised).
+    {
+      const camLabel = (l, i) =>
+        (l && l.length > 44 ? `${l.slice(0, 43)}…` : l) || `Camera ${i + 1}`;
+      const entries = [];
+      if (mocapDevices.length === 0) {
+        entries.push({ label: '(start mocap once to list cameras)', enabled: false });
+      }
+      entries.push({
+        label: 'Default (auto)',
+        type: 'checkbox',
+        checked: !mocapCameraId,
+        click: () => setMocapCamera(null),
+      });
+      for (const [i, d] of mocapDevices.entries()) {
+        entries.push({
+          label: camLabel(d.label, i),
+          type: 'checkbox',
+          checked: mocapCameraId === d.deviceId,
+          click: () => setMocapCamera(d.deviceId),
+        });
+      }
+      template.push({ label: 'Camera', submenu: entries });
+    }
 
     // Facing is wheel-controlled only (hover + scroll steps 45 degrees);
     // the old five-entry menu block was removed as redundant.
@@ -358,6 +427,7 @@ function registerIpc() {
 //   --play <name>              play a clip from animations/ once, then idle
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
 //   --mocap <on|off|toggle>    webcam body tracking on / off / flip state
+//   --camera <name|default>    pick the mocap camera by label substring
 const PLAY_ALIASES = {
   poke: 'surprise',
   poked: 'surprise',
@@ -400,6 +470,7 @@ function parseCliArgs(argv) {
     play: null,
     facing: null,
     mocap: null,
+    camera: null,
     hide: false,
     devtools: false,
     quit: false,
@@ -420,6 +491,7 @@ function parseCliArgs(argv) {
     '--reaction': 'play',
     '--facing': 'facing',
     '--mocap': 'mocap',
+    '--camera': 'camera',
   };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
@@ -465,6 +537,7 @@ function dispatchCli(argv, source) {
     cmds.play != null ||
     cmds.facing != null ||
     cmds.mocap != null ||
+    cmds.camera != null ||
     cmds.devtools ||
     cmds.hide;
   if (cmds.hide) win?.hide();
@@ -504,6 +577,22 @@ function sendCliToRenderer(cmds) {
     if (/^(1|on|y|yes|true|start)$/i.test(cmds.mocap)) setMocap(true);
     else if (/^(0|off|n|no|false|stop)$/i.test(cmds.mocap)) setMocap(false);
     else setMocap(!mocapActive); // 'toggle' or any other value flips
+  }
+  if (cmds.camera != null) {
+    if (/^(default|auto|none|system)$/i.test(cmds.camera)) {
+      setMocapCamera(null);
+    } else {
+      const q = cmds.camera.toLowerCase();
+      const dev = mocapDevices.find((d) => (d.label || '').toLowerCase().includes(q));
+      if (dev) setMocapCamera(dev.deviceId);
+      else {
+        appendLog(
+          `[cmd] camera not found: ${cmds.camera} (known: ${
+            mocapDevices.map((d) => d.label).join(' | ') || 'none yet — start mocap once to enumerate'
+          })`
+        );
+      }
+    }
   }
   if (cmds.play != null) {
     const alias = PLAY_ALIASES[String(cmds.play).toLowerCase()];

@@ -92,6 +92,20 @@ export const platform = {
     if (bridge) bridge.sendMocapLandmarks(data);
   },
 
+  // Camera picker: renderer reports the videoinput list + current selection;
+  // menu/CLI selection comes back as onMocapCamera; getMocapCamera restores
+  // the persisted choice (null = system default).
+  onMocapCamera(cb) {
+    if (bridge) bridge.onMocapCamera(cb);
+  },
+  sendMocapDevices(list, selected) {
+    if (bridge) bridge.sendMocapDevices(list, selected);
+  },
+  async getMocapCamera() {
+    if (bridge) return bridge.getMocapCamera();
+    return null;
+  },
+
   // Renderer startup finished; lets the main process flush queued CLI commands.
   ready() {
     if (bridge) bridge.ready();

@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('live3d', {
   onMocapLandmarks: (cb) => {
     ipcRenderer.on('mocap:landmarks', (_event, data) => cb(data));
   },
+  // Camera picker: device list report, selection events, persisted choice.
+  sendMocapDevices: (list, selected) => ipcRenderer.send('mocap:devices', list, selected),
+  onMocapCamera: (cb) => {
+    ipcRenderer.on('mocap:camera', (_event, id) => cb(id));
+  },
+  getMocapCamera: () => ipcRenderer.invoke('mocap:getCamera'),
   // Renderer startup finished; the main process flushes queued CLI commands.
   ready: () => ipcRenderer.send('app:ready'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),

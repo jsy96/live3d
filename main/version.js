@@ -1,5 +1,5 @@
 // Single source of truth for the app version.
 // Shown in the tray menu / tooltip and the ?debug=1 badge.
-const APP_VERSION = 'v1.0.261127-2';
+const APP_VERSION = 'v1.0.261127-3';
 
 module.exports = { APP_VERSION };

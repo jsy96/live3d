@@ -33,6 +33,7 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello
 | `--model <名称或绝对路径>` | 切换 `models/` 里的 VRM 模型 |
 | `--facing <角度>` | 转身：0 正面 / 45 / 90 侧面 / 135 / 180 背面 |
 | `--mocap <on\|off\|toggle>` | **摄像头身体动捕**：桌宠实时模仿摄像头前的身体动作（右上角红徽标 = 开启中，点击可关；开启时自动弹出「动捕预览」小窗显示摄像头画面 + 追踪骨骼叠加，右键菜单 `Skeleton View` 可开关；动捕期间 `--play`/摸头/戳等动作类命令会被忽略） |
+| `--camera <名称\|default>` | 选动捕摄像头：设备标签子串匹配（先 `--mocap on` 一次枚举出列表，日志 `[mocap] devices` 可查标签），如 `--camera integrated` / `--camera 4k` / `--camera obs`；`default` 恢复系统默认；选择持久化，切换即时生效（预览窗口同步换源） |
 | `--hide` / `--show` | 隐藏 / 显示窗口 |
 | `--devtools` | 切换 DevTools |
 | `--quit` | 退出桌宠 |

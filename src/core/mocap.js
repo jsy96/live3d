@@ -134,6 +134,11 @@ export class MocapController {
     this.stream = null;
     this.landmarker = null;
     this.delegate = 'GPU';
+    this.cameraId = null; // selected videoinput deviceId (null = system default)
+    // Optional cb(list, selectedId) for the camera picker menu: list = [{
+    // deviceId, label }] of videoinput devices (labels need an active media
+    // permission, so they only fill in once mocap has opened a camera).
+    this.onDevices = null;
 
     this._bones = new Map(); // name -> entry (insertion order = DRIVEN order)
     this._conf = new Map(); // bone name -> smoothed 0..1 tracked confidence
@@ -163,6 +168,11 @@ export class MocapController {
     this._qTarget = new THREE.Quaternion();
     this._qScene = new THREE.Quaternion();
     this._mBasis = new THREE.Matrix4();
+
+    // Hot-plug / device list changes refresh the camera picker menu.
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', () => this._reportDevices());
+    }
   }
 
   _log(msg) {
@@ -232,6 +242,69 @@ export class MocapController {
     }
   }
 
+  /** Open the camera stream (selected device, falling back to default). */
+  async _openCamera() {
+    const base = { width: 640, height: 480 };
+    const attempt = (dev) =>
+      navigator.mediaDevices.getUserMedia({
+        video: dev ? { ...base, deviceId: { exact: dev } } : { ...base, facingMode: 'user' },
+        audio: false,
+      });
+    let stream;
+    try {
+      stream = await attempt(this.cameraId);
+    } catch (err) {
+      if (!this.cameraId) throw err;
+      this._log(`selected camera failed (${err.message}); falling back to default`);
+      this.cameraId = null;
+      stream = await attempt(null);
+    }
+    this.stream = stream;
+    if (!this.video) {
+      this.video = document.createElement('video');
+      this.video.muted = true;
+      this.video.playsInline = true;
+      this.video.style.display = 'none';
+      document.body.appendChild(this.video);
+    }
+    this.video.srcObject = stream;
+    await this.video.play();
+    this._log(`camera ok (${this.video.videoWidth}x${this.video.videoHeight})`);
+  }
+
+  /** Report the videoinput device list (labels) to the picker menu. */
+  async _reportDevices() {
+    if (typeof this.onDevices !== 'function') return;
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const list = all
+        .filter((d) => d.kind === 'videoinput')
+        .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+      this.onDevices(list, this.cameraId);
+    } catch (err) {
+      this._log(`enumerateDevices failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Select the camera (deviceId, or null for the system default). While
+   * tracking, the stream is reopened live (the landmarker is unaffected);
+   * the change is persisted by the main process.
+   */
+  async setCamera(deviceId) {
+    this.cameraId = deviceId ?? null;
+    this._log(`camera set to ${this.cameraId ? `device ${this.cameraId.slice(0, 8)}…` : 'default'}`);
+    if (!this.active) return;
+    this.stream?.getTracks().forEach((t) => t.stop());
+    try {
+      await this._openCamera();
+      this._lastVideoTime = -1;
+    } catch (err) {
+      this._log(`camera switch failed: ${err.message}`);
+    }
+    await this._reportDevices();
+  }
+
   /** Start camera + landmarker; resolves when tracking is live. */
   async start() {
     if (this.active) return;
@@ -240,20 +313,8 @@ export class MocapController {
       throw new Error('camera API unavailable');
     }
     this._log('requesting camera...');
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
-      audio: false,
-    });
-    if (!this.video) {
-      this.video = document.createElement('video');
-      this.video.muted = true;
-      this.video.playsInline = true;
-      this.video.style.display = 'none';
-      document.body.appendChild(this.video);
-    }
-    this.video.srcObject = this.stream;
-    await this.video.play();
-    this._log(`camera ok (${this.video.videoWidth}x${this.video.videoHeight})`);
+    await this._openCamera();
+    await this._reportDevices();
 
     await this._ensureLandmarker();
     this._resetPose();
