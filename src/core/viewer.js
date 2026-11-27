@@ -33,6 +33,10 @@ export function createViewer(canvas) {
   // Facing (turntable) state in degrees: 0 = front, ±45 = three-quarter,
   // ±90 = side, 180 = back. Damped so the turn never snaps.
   const facing = { current: 0, target: 0 };
+  // Base yaw VRMUtils.rotateVRM0 put on the scene (VRM 0.x models need
+  // +180° to face the camera). updateFacing must ADD to it, not replace it
+  // — writing facing alone wipes the correction and the pet shows its back.
+  let baseYaw = 0;
 
   function fitRenderer() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -62,13 +66,18 @@ export function createViewer(canvas) {
     setFacing(deg) {
       facing.target = deg;
     },
+    // Called by loadVRM right after rotateVRM0 so the turntable composes on
+    // top of the model's native facing correction.
+    setBaseYaw(rad) {
+      baseYaw = rad;
+    },
     updateFacing(dt) {
       if (current) {
         // Shortest-path damping toward the target angle.
         // NOTE: current is the VRM instance — the Object3D is vrm.scene.
         const diff = ((((facing.target - facing.current) % 360) + 540) % 360) - 180;
         facing.current += diff * (1 - Math.exp(-dt * 8));
-        current.scene.rotation.y = (facing.current * Math.PI) / 180;
+        current.scene.rotation.y = baseYaw + (facing.current * Math.PI) / 180;
       }
     },
     render() {
@@ -149,6 +158,9 @@ export async function loadVRM(viewer, url) {
   }
   // VRM 0.x models face -Z; rotate so the pet faces the camera (+Z).
   VRMUtils.rotateVRM0(vrm);
+  // Remember the correction: updateFacing composes the turntable ON TOP of
+  // it (replacing scene.rotation.y outright would re-break VRM 0.x facing).
+  viewer.setBaseYaw(vrm.scene.rotation.y);
 
   if (viewer.vrm) {
     viewer.scene.remove(viewer.vrm.scene);

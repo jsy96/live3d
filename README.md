@@ -3,10 +3,14 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码未来可直接跑在手机网页端，实现桌宠在电脑与手机之间漫游。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261126-19**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261127-1**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261127-1**（2026-11-27）
+  - 修复：**默认启动背对用户**——v14 把 `updateFacing` 的旋转目标改到 `vrm.scene.rotation.y` 后，每帧把 `VRMUtils.rotateVRM0` 写在那里的 π 校正（VRM 0.x 模型朝 -Z，需 +180° 才面向摄像头；默认启动模型 AvatarSample_A 即 VRM 0.x）直接覆盖成 `facing.current`（默认 0），校正失效 → 背对。VRM 1.0 模型（如 Seed-san）本就无校正不受影响，此前混测未暴露
+  - 修复方式：`viewer.setBaseYaw()` 在 `loadVRM` 的 `rotateVRM0` 之后记录基准朝向，`updateFacing` 改为 `baseYaw + facing.current` 叠加合成（转台语义不变：0 = 正面、180 = 背面，滚轮/`--facing` 均在其上叠加）；换模型时 `baseYaw` 随新模型重取
+  - 验证：Win32 `GetWindowRect` 定位窗口物理矩形截图（首跑用工作区 DIP 坐标换算被 DPI 缩放带偏截到了背景编辑器，改按句柄取物理矩形），视觉模型确认**正脸朝向观察者**（可见眼睛/微笑/领结）
 - **v1.0.261126-19**（2026-11-26）
   - **摄像头身体动捕（Camera Mocap）**：桌宠实时模仿摄像头前你的身体动作——躯干倾斜、头颈转动、双臂/手肘、双腿/膝盖（可见时）逐段跟随， hips 高度经站立基准校准后整体下沉/上移（蹲下/起跳）。新增 `src/core/mocap.js`（~450 行）：MediaPipe `PoseLandmarker`（`@mediapipe/tasks-vision` 1.2.3，GPU delegate 失败自动回退 CPU）跑 VIDEO 模式，取 `worldLandmarks`（米制 3D 关节点）→ EMA 平滑 → 映射进 VRM 场景空间（**镜像模式**默认开：桌宠 = 你的镜面影像；右键菜单 `Mirror Mode` 可切同侧模仿）
   - **重定向解算器（aim solver）**：不依赖 Kalidokit，方向约定全部从实际骨架测量——attach 时按 normalized 骨架的 T-pose 静息位置计算每根骨骼的静息指向，每帧用「父级当前坐标系下 setFromUnitVectors(静息方向 → 追踪方向)」逐骨骼解算（按层级顺序累积父级旋转，与 A_POSE 手臂正负号等经验约定无关）；躯干倾角按同一场景轴拆 35/35/30 分配到 hips/spine/chest（同轴分角精确合成，总倾角钳制 0.5 rad）；头部用完整正交基（Y=颈向、Z=鼻-耳中点面朝向）捕捉偏航/俯仰/侧倾；四肢逐段独立 cap（臂 2.7 / 腿 1.35 / 颈 0.55 rad）；关键点可见度 <0.55 的肢体按置信度淡出到自然下垂，不冻结
