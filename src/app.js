@@ -6,6 +6,7 @@ import { VRMAPlayer } from './core/vrma.js';
 import { HitTester } from './interaction/hit-test.js';
 import { MouseInteractor } from './interaction/mouse.js';
 import { createWebPicker } from './web-picker.js';
+import { createCloudRoamUI } from './cloud-roam-ui.js';
 import { platform } from './platform.js';
 
 // Uncaught errors land in the log with full stacks (console-message hook in
@@ -326,6 +327,9 @@ async function main() {
     });
     // The initial model/animation loaded above predate the picker's creation.
     webPicker.select({ model: currentModelName, animation: currentAnimName });
+    // Cloud roaming (CDN pages): first-open home-name prompt + the
+    // whereabouts panel (who hosts the pet now, history, waiting homes).
+    if (window.__LIVE3D_CDN__?.envId) createCloudRoamUI();
   }
 
   // Startup done: the main process can now deliver queued CLI commands.

@@ -4,10 +4,17 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
 - 云版入口：**`https://zc.leige.online/`**（Cloudflare Worker 前置 + 腾讯云 CloudBase 托管内容；备用直连 `https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`——腾讯测试域名，浏览器首次访问会弹「风险提醒」确认页）
-- 当前版本：**v1.0.261128-12**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261128-31**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261128-31**（2026-11-28，云漫游第一档）
+  - **桌宠云漫游（任意浏览器间串门，老金需求：朋友间"抢桌宠回家养"）**：云文档新增 `holder`（现在谁家）+ `visits`（串门史，留最近 30 条）+ 心跳集合 `pet_homes`（谁开着浏览器）；**状态机**——「云之家」（自由状态，人人可见）→ 某家「接桌宠回家」（跑入动画独占，其他页面收起桌宠并自动弹出「桌宠去向」面板）→「送回云之家」或持有者关页面 ~15s 后自动回云（谁先发现谁写，幂等）
+  - **「桌宠去向」面板（🏠 dock 按钮）**：现在在哪/做了多久（离线会标注"马上回云之家"）、串门记录（哪家·几点到几点·时长，最新在上）、开着的家（在线名单 + 持有中/等待中/你自己）；**首次打开弹窗起名**（"这是谁的家"，localStorage 持久，只问一次）
+  - **实现**：`src/sync/cloud.js`（holder 协议 + 心跳/轮询 presence + 自动回云）、`src/cloud-roam-ui.js`（起名弹窗 + 去向面板 + 自动弹出）、`platform.js` 暴露 `adoptPet/releasePet/onRoamState/getRoamState/renameHome`；进出动画复用现有 `onRoam`（'enter'/'exit'）路径——app.js 零改动
+  - **排错记（血泪，全记实锤）**：①双 realtime watch 共用一条 WS 会互相 INIT 超时（`wsclient.send timedout` 级联）→ presence 改**10s 轮询查询**，watch 只留 pet_state 一个；②自动回云的 5s 定时器按**过期 lastDoc** 判定会把刚发生的领养覆盖回 null → 三重修复：领养清自身定时器 + 可见性转换清定时器 + 定时器触发前**重读文档校验 holder 未变**；③SDK watch 偶发丢事件（"nextevent ignored"）→ 轮询顺带拉文档做**看门狗对账**（10s 内必收敛）；④UI 动作加 **2s 冷却**（防任何快速连击翻转状态）；⑤**同版本号重复部署 = `?v=` 缓存穿透失效**（CF/TCB 按 URL 缓存，URL 不变就永远旧字节）——**今后每次部署必须 bump 版本号**；⑥worker 对 HTML 加源站 cache-bust（`?_=` 时间戳）防 TCB 边缘缓存旧页面
+  - **验证状态**：本地双浏览器全链路（真云数据库）多次稳定 PASS（起名→presence→领养→对端收起+面板→释放→对端回归→历史带时长）；zc 公网址完整 e2e PASS 过一轮；后续 zc 复测被当晚本机 DNS/Edge headless 环境抖动阻断（TCB 源站与 zc 均 200 正常），**待老金真机验收**
+  - 已知边界：真人 2s 内连点"接/送"会被冷却吞掉第二次（防抖设计）；持有者页面退到后台久了（手机浏览器冻结定时器）桌宠会自动回云之家——重新打开再接即可
 - **v1.0.261128-14**（2026-11-28）
   - **加载提速 15~25 倍（老金实测反馈"加载太慢了"）**：大文件改为**浏览器直连腾讯云源站**（`cdn-config.js` 新增 `assetOrigin`）——15MB 模型经 CF 边缘 20~45s，直连 TCB 国内边缘实测 **1.7s**、bundle 2.5MB **0.6s**、styles 0.4s，页面壳仍走 `zc.leige.online` 保持干净域名；浏览器 performance entries 全程实测（新增 `scripts/cdp-speed.mjs` 资源计时探针）
   - **可行性实证（直连为什么不会吃到「风险提醒」）**：对源站做头矩阵实验——`Sec-Fetch-Dest: document/navigate`（地址栏导航）才触发拦截，而页面 `fetch()`（`Sec-Fetch-Dest: empty`）和 `<script src>`（`Dest: script`）均 200；且 TCB 静态托管对带 Origin 的请求回**动态 CORS 准许**（`access-control-allow-origin` 回显来源域），跨域 fetch 模型畅通
@@ -211,6 +218,7 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 云版 | 固定链接完整播放器（CDN 托管，电脑关机可玩） | ✅ 已实现 |
 | 云版 | 跨设备云同步（CloudBase 实时数据库，匿名登录，无电脑跟随） | ✅ 已实现 |
 | 云版 | 自定义域名 `zc.leige.online`（CF Worker 前置 + TCB 内容） | ✅ 已上线 |
+| 云版 | 云漫游（任意浏览器间接/送/串门记录/在线名单/断线自动回云） | ✅ 已上线（待真机验收） |
 
 ## 技术栈
 
@@ -238,6 +246,7 @@ ai-live3d/
 │   ├── styles.css
 │   ├── platform.js          # 平台适配层：Electron 桥 vs 浏览器降级（WS 同步）
 │   ├── web-picker.js        # 手机端控制台（漫游/朝向/模型/动画选择，web only）
+│   ├── cloud-roam-ui.js     # 云漫游 UI（首次起名弹窗 + 桌宠去向面板）
 │   ├── core/
 │   │   ├── viewer.js        # Three.js 场景/相机自动取景/VRM 加载
 │   │   ├── animator.js      # 动画状态机（idle/petting/grabbed/poked/happy）

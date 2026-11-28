@@ -107,7 +107,7 @@ function cdnEntry(entry, kind) {
 
 function ensureWebBus() {
   if (webCbs) return webCbs;
-  webCbs = { model: [], animation: [], facing: [], play: [], roam: [] };
+  webCbs = { model: [], animation: [], facing: [], play: [], roam: [], roamState: [] };
 
   // Shared fan-in: both lanes speak the same 'state'/'play' vocabulary.
   const dispatch = (msg) => {
@@ -158,7 +158,15 @@ function ensureWebBus() {
     cloudSync.on(ROAMING_EVENTS.PLAY, (msg) => {
       if (msg.entry) for (const cb of webCbs.play) cb(cdnEntry(msg.entry, 'animations'));
     });
+    cloudSync.on(ROAMING_EVENTS.ROAM, (msg) => {
+      if (msg.cmd) for (const cb of webCbs.roam) cb(msg.cmd);
+    });
+    cloudSync.on('roamstate', (msg) => {
+      for (const cb of webCbs.roamState) cb(msg);
+    });
     cloudSync.start(CDN.envId);
+    // Debug handle for ?debug=1 introspection / e2e tests.
+    window.__cloudSync = cloudSync;
     // The first snapshot can beat the app's subscriber registrations; replay
     // the shared state once they've had a chance to run.
     setTimeout(() => cloudSync?.replay(), 300);
@@ -272,6 +280,30 @@ export const platform = {
     if (bridge) return false;
     webSync?.send(ROAMING_EVENTS.PICK, { what: "roam", value: target });
     return true;
+  },
+
+  // --- Cloud roaming (CDN mode; no-ops elsewhere) ------------------------
+  // Whereabouts snapshot { me, myName, holder, holderName, holderSince,
+  // holderOnline, visits, homes } and its live updates.
+  getRoamState() {
+    return cloudSync?.roamState ?? null;
+  },
+  onRoamState(cb) {
+    if (!bridge) ensureWebBus().roamState.push(cb);
+  },
+  // "谁的家" name for this browser (asked once on first open).
+  getHomeName() {
+    return cloudSync?.name ?? '';
+  },
+  renameHome(name) {
+    cloudSync?.renameHome(name);
+  },
+  // Adopt the free pet / send my pet back to the cloud home.
+  adoptPet() {
+    return cloudSync?.adoptPet() ?? false;
+  },
+  releasePet() {
+    return cloudSync?.releasePet() ?? false;
   },
 
   // Desktop renderer: wheel-turn facing should sync to phones.

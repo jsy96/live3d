@@ -35,6 +35,12 @@ export default {
       path === PET + '/' || path.startsWith(PET + '/') ? path : PET + path;
     const target = ORIGIN + upstreamPath + url.search;
 
+    // TCB's own edge caches by URL — index.html's URL never changes, so a
+    // redeployed page could serve stale HTML (with its old ?v= asset refs)
+    // indefinitely. Bust the ORIGIN url for never-cache paths (the query is
+    // ignored by static hosting but gives every request a fresh cache key).
+    const originUrl = NEVER_CACHE.test(path) ? ORIGIN + upstreamPath + (url.search || `?_=${Date.now()}`) : target;
+
     const cacheKey = new Request(target, { method: 'GET' });
     const cache = caches.default;
 
@@ -70,7 +76,7 @@ export default {
 
     let res;
     try {
-      res = await fetch(target, init);
+      res = await fetch(originUrl, init);
     } catch (err) {
       return new Response(`origin unreachable: ${err.message}`, { status: 502 });
     }
