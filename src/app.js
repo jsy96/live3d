@@ -260,21 +260,16 @@ async function main() {
   platform.onPlayOnce(playOnce);
 
   // Roaming hand-off: 'exit' runs the pet off screen (desktop then hides the
-  // window, phone stows the model), 'enter' runs it back in.
+  // window, phone stows the model), 'enter' runs it back in. Recalling on the
+  // phone is the dock's 📱 button.
   platform.onRoam((cmd) => {
     if (cmd === 'exit') {
       viewer.startRoam('exit', () => {
         if (platform.isDesktop) platform.roamExited();
-        else {
-          viewer.setPetVisible(false);
-          webPicker?.setPetAway(true);
-        }
+        else viewer.setPetVisible(false);
       });
     } else if (cmd === 'enter') {
-      if (!platform.isDesktop && !viewer.petVisible) {
-        viewer.setPetVisible(true);
-        webPicker?.setPetAway(false);
-      }
+      if (!platform.isDesktop && !viewer.petVisible) viewer.setPetVisible(true);
       viewer.startRoam('enter');
     }
   });

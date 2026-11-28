@@ -50,15 +50,24 @@ export function createWebPicker({ models, animations }) {
   toDesktop.addEventListener('click', () => platform.roamTo('desktop'));
 
   const sheet = el('div', 'web-sheet hidden');
-  const recallChip = el('button', 'web-recall hidden', '\u{1F4F1} 桌宠在电脑上 · 点此召回');
-  recallChip.addEventListener('click', () => platform.roamTo('phone'));
+  // Full-screen dim layer under the sheet: tapping anywhere outside closes
+  // the console (the ✕ stays as an explicit affordance).
+  const backdrop = el('div', 'web-backdrop hidden');
 
-  fab.addEventListener('click', () => sheet.classList.toggle('hidden'));
+  function openSheet(v) {
+    sheet.classList.toggle('hidden', !v);
+    backdrop.classList.toggle('hidden', !v);
+  }
+  backdrop.addEventListener('click', () => openSheet(false));
+  fab.addEventListener('click', () => openSheet(sheet.classList.contains('hidden')));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') openSheet(false);
+  });
   dock.append(toPhone, toDesktop, fab);
-  document.body.append(dock, sheet, recallChip);
+  document.body.append(dock, backdrop, sheet);
 
   const close = el('button', 'web-close', '✕');
-  close.addEventListener('click', () => sheet.classList.add('hidden'));
+  close.addEventListener('click', () => openSheet(false));
   const title = el('div', 'web-title', '桌宠控制台');
   const head = el('div', 'web-head');
   head.append(title, close);
@@ -70,7 +79,11 @@ export function createWebPicker({ models, animations }) {
   sheet.append(chipRow);
   const modelChips = models.map((m) => {
     const chip = el('button', 'web-mchip', prettyName(m.path));
-    chip.addEventListener('click', () => platform.setModelRemote(basename(m.path)));
+    // Model switches are dramatic — close the console so the result shows.
+    chip.addEventListener('click', () => {
+      platform.setModelRemote(basename(m.path));
+      openSheet(false);
+    });
     chipRow.append(chip);
     return { chip, name: basename(m.path) };
   });
@@ -135,10 +148,6 @@ export function createWebPicker({ models, animations }) {
     refresh();
   }
 
-  /** Pet stowed after a roam-away (true) or back home (false). */
-  function setPetAway(v) {
-    recallChip.classList.toggle('hidden', !v);
-  }
-
-  return { select, setPetAway };
+  // Recall after a roam-away is the dock's 📱 button — no extra chip needed.
+  return { select };
 }

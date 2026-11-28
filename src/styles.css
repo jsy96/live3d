@@ -164,21 +164,11 @@ body.grabbing {
   background: rgba(43, 58, 85, 0.68);
 }
 
-.web-recall {
+.web-backdrop {
   position: fixed;
-  top: calc(12px + env(safe-area-inset-top, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 999px;
-  background: rgba(43, 58, 85, 0.9);
-  color: #e8ecf4;
-  font-size: 13px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  cursor: pointer;
-  z-index: 30;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 35; /* above the dock (30), below the sheet (40) */
 }
 
 .web-sheet {
