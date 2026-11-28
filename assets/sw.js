@@ -9,6 +9,10 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const p = new URL(event.request.url).pathname;
-  if (p.startsWith('/models/') || p.startsWith('/animations/')) return;
+  // Models/animations BYPASS the service worker entirely — WebKit's (iOS) SW
+  // fetch has quirks with large binary responses that Chrome handles fine.
+  // They may sit on the TCB origin (cross-origin URL under /pet/models/...)
+  // or on this host (/models/...) — match both shapes.
+  if (/\/(pet\/)?(models|animations)\//.test(p)) return;
   event.respondWith(fetch(event.request));
 });

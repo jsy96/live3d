@@ -8,6 +8,11 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-14**（2026-11-28）
+  - **加载提速 15~25 倍（老金实测反馈"加载太慢了"）**：大文件改为**浏览器直连腾讯云源站**（`cdn-config.js` 新增 `assetOrigin`）——15MB 模型经 CF 边缘 20~45s，直连 TCB 国内边缘实测 **1.7s**、bundle 2.5MB **0.6s**、styles 0.4s，页面壳仍走 `zc.leige.online` 保持干净域名；浏览器 performance entries 全程实测（新增 `scripts/cdp-speed.mjs` 资源计时探针）
+  - **可行性实证（直连为什么不会吃到「风险提醒」）**：对源站做头矩阵实验——`Sec-Fetch-Dest: document/navigate`（地址栏导航）才触发拦截，而页面 `fetch()`（`Sec-Fetch-Dest: empty`）和 `<script src>`（`Dest: script`）均 200；且 TCB 静态托管对带 Origin 的请求回**动态 CORS 准许**（`access-control-allow-origin` 回显来源域），跨域 fetch 模型畅通
+  - **全链改动**：①`build-cdn-site.mjs`——index.html 的 bundle/styles 直指源站（`?v=` 版本化）、CSP `script-src/style-src` 加入源站、`cdn-config.js` 内置**捕获阶段资源错误回退 shim**（CSP 禁内联 onerror，脚本/样式加载失败自动换同源 CF 路径重载）；②`platform.js`——assets.json 目录与 WS/云推送条目的模型/动画 URL 统一重写为源站 + `fallbackUrl` 同源备用；③`app.js`——loadModel/loadAnimation/playOnce 失败一次后改走 `fallbackUrl` 重试；④`sw.js`——大二进制旁路规则兼容跨域 `/pet/models/` 路径（iOS WebKit SW 怪癖防线不破）；⑤zc-worker——js/css 纳入边缘缓存 1 天（此前漏了，每次刷新都白拉 2.5MB bundle）
+  - 回归：`zc.leige.online` 双设备云同步 PASS（A 换模 → B 收敛）；本机 DNS 负缓存已消散，域名解析恢复正常
 - **v1.0.261128-13**（2026-11-28）
   - **`https://zc.leige.online/` 正式上线（零人工：老金说"你能做就全帮我做"）**：改走 Cloudflare Worker 反代路线（`cloud/zc-worker/`，wrangler 自定义域名自动配 DNS+证书，同 `dl.leige.online` 机制）——`zc.leige.online/*` → CloudBase 静态托管 `/pet/*`（`/` 重写到 `/pet/`、`/pet/...` 直通兼容页内绝对路径），内容仍全在腾讯云，源站域名不出现在页面里；**同时恢复 `old.leige.online` 原绑定+路由**（cert bs0jUrE9 + `/`、`/eldercare` → SCF eldercare，实测 200），eldercare 零影响，TCB 自定义域名名额回到被 old 占用的原状
   - **Worker 排错三部曲（腾讯测试域名的浏览器敌对行为，逐个实证定位）**：①转发原始请求头时浏览器访问吃到「风险提醒」→ 定位到 **Sec-Fetch-\* 头触发**（curl 带 UA 仍 200，UA 无辜）；②剥到最小头集后页面空白 → 源站对无 Accept 请求回 **`Content-Disposition: attachment`**（浏览器当下载不渲染）；③终版=**头白名单转发**（accept/accept-language/range/if-none-match/if-modified-since/user-agent）+ **响应删 Content-Disposition** + html 补 charset——此后浏览器正常渲染；**Accept-Encoding 千万别手动设**（Workers 透明解压会被破坏，实测页面空白）

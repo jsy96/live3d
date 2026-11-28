@@ -66,10 +66,13 @@ async function main() {
       try {
         vrm = await loadVRM(viewer, url);
       } catch (retryable) {
-        // Mobile networks (especially via the public tunnel) can hiccup
-        // mid-download; one automatic retry before surfacing the failure.
-        console.warn(`[ai-live3d] model load failed once (${retryable.message}); retrying`);
-        vrm = await loadVRM(viewer, url);
+        // Mobile networks can hiccup mid-download; retry once — hopping to
+        // the same-origin CDN path when the fast TCB-origin URL failed.
+        const retryUrl = (typeof entry === 'object' && entry.fallbackUrl) || url;
+        console.warn(
+          `[ai-live3d] model load failed once (${retryable.message}); retrying${retryUrl === url ? '' : ' via CDN path'}`
+        );
+        vrm = await loadVRM(viewer, retryUrl);
       }
       const mixer = new ExpressionMixer(vrm);
       animator = new Animator(vrm, mixer);
@@ -132,7 +135,15 @@ async function main() {
     pendingPlay = null;
     try {
       if (!vrmaPlayer) vrmaPlayer = new VRMAPlayer();
-      await vrmaPlayer.loadReaction('skill', entry.url, currentVrm);
+      try {
+        await vrmaPlayer.loadReaction('skill', entry.url, currentVrm);
+      } catch (retryable) {
+        if (!entry.fallbackUrl) throw retryable;
+        console.warn(
+          `[ai-live3d] play-once load failed once (${retryable.message}); retrying via CDN path`
+        );
+        await vrmaPlayer.loadReaction('skill', entry.fallbackUrl, currentVrm);
+      }
       // (Re)link: a model switch recreated the animator with vrma unset.
       animator.setVRMA(vrmaPlayer);
       animator.startReaction('skill');
@@ -177,7 +188,16 @@ async function main() {
     animator?.setState('idle');
     try {
       if (!vrmaPlayer) vrmaPlayer = new VRMAPlayer();
-      await vrmaPlayer.load(entry.url, currentVrm);
+      try {
+        await vrmaPlayer.load(entry.url, currentVrm);
+      } catch (retryable) {
+        // One retry, hopping to the same-origin CDN path (see loadModel).
+        if (!entry.fallbackUrl) throw retryable;
+        console.warn(
+          `[ai-live3d] animation load failed once (${retryable.message}); retrying via CDN path`
+        );
+        await vrmaPlayer.load(entry.fallbackUrl, currentVrm);
+      }
       animator.setVRMA(vrmaPlayer);
       platform.reportCurrentAnimation(entry.path);
       currentAnimName = entry.path.split(/[\\/]/).pop().toLowerCase();

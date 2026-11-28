@@ -27,6 +27,20 @@ async function getCdnJson() {
     } catch {
       cdnJson.loaded = {};
     }
+    // Rewrite catalog URLs to the fast TCB origin (China edge ~1.7s for a
+    // 15MB model vs 20-45s through the CF front). fallbackUrl keeps the
+    // same-origin CDN path for the loadModel retry path.
+    if (CDN?.assetOrigin) {
+      for (const key of ['models', 'animations']) {
+        const arr = cdnJson.loaded[key];
+        if (!Array.isArray(arr)) continue;
+        cdnJson.loaded[key] = arr.map((e) =>
+          typeof e?.url === 'string' && e.url.startsWith(CDN.base)
+            ? { ...e, fallbackUrl: e.url, url: CDN.assetOrigin + e.url }
+            : e
+        );
+      }
+    }
   }
   return cdnJson.loaded;
 }
@@ -82,11 +96,13 @@ async function webWsUrl() {
 }
 
 // Entries from the PC carry root-relative URLs (/models/..) meant for its
-// own origin; CDN copies live under a sub-path — rewrite them there.
+// own origin; CDN copies live under a sub-path — rewrite them there, riding
+// the fast TCB origin for the big binaries with a same-origin fallback.
 function cdnEntry(entry, kind) {
   if (!entry || !CDN) return entry;
   const file = encodeURIComponent(String(entry.path ?? '').split(/[\\/]/).pop() ?? '');
-  return { ...entry, url: `${CDN.base}${kind}/${file}` };
+  const rel = `${CDN.base}${kind}/${file}`;
+  return CDN.assetOrigin ? { ...entry, url: CDN.assetOrigin + rel, fallbackUrl: rel } : { ...entry, url: rel };
 }
 
 function ensureWebBus() {

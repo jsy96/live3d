@@ -20,8 +20,9 @@ const ORIGIN = 'https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com';
 const PET = '/pet';
 
 // Extensions safe to edge-cache without a version marker (content-addressed
-// enough for a toy: a replaced model shows within 10 minutes).
-const LONG_CACHE = /\.(png|ico|jpe?g|webp|woff2?|ttf)$/i;
+// enough for a toy: a replaced model shows within 10 minutes). js/css carry
+// ?v= version queries, so they cache for a day too.
+const LONG_CACHE = /\.(png|ico|jpe?g|webp|woff2?|ttf|js|css)$/i;
 const SHORT_CACHE = /\.(vrm|vrma|glb)$/i;
 const NEVER_CACHE = /(\.json$|index\.html$|cdn-config|^\/pet\/?$|^\/?$)/i;
 
