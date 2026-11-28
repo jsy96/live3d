@@ -3,11 +3,18 @@
 AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码桌面与手机浏览器共用——桌面端起局域网服务，手机扫码即让桌宠「跑进」手机屏幕（触摸手势全兼容），WebSocket 双向同步支持手机端换模型/换动作，还能一键把桌宠在电脑和手机之间「赶来赶去」。**云版彻底无电脑**：页面托管在腾讯云 CloudBase CDN，任何设备打开固定链接即是完整播放器，跨设备同步走 CloudBase 实时数据库（匿名登录 + watch 推送）——电脑从此可开可不开。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 云版入口：**`https://zc.leige.online/`**（自定义域名，绑定中——就绪前用默认地址 `https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`，该测试域名浏览器首次访问会弹腾讯「风险提醒」确认页，自定义域名无此页）
+- 云版入口：**`https://zc.leige.online/`**（Cloudflare Worker 前置 + 腾讯云 CloudBase 托管内容；备用直连 `https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`——腾讯测试域名，浏览器首次访问会弹「风险提醒」确认页）
 - 当前版本：**v1.0.261128-12**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261128-13**（2026-11-28）
+  - **`https://zc.leige.online/` 正式上线（零人工：老金说"你能做就全帮我做"）**：改走 Cloudflare Worker 反代路线（`cloud/zc-worker/`，wrangler 自定义域名自动配 DNS+证书，同 `dl.leige.online` 机制）——`zc.leige.online/*` → CloudBase 静态托管 `/pet/*`（`/` 重写到 `/pet/`、`/pet/...` 直通兼容页内绝对路径），内容仍全在腾讯云，源站域名不出现在页面里；**同时恢复 `old.leige.online` 原绑定+路由**（cert bs0jUrE9 + `/`、`/eldercare` → SCF eldercare，实测 200），eldercare 零影响，TCB 自定义域名名额回到被 old 占用的原状
+  - **Worker 排错三部曲（腾讯测试域名的浏览器敌对行为，逐个实证定位）**：①转发原始请求头时浏览器访问吃到「风险提醒」→ 定位到 **Sec-Fetch-\* 头触发**（curl 带 UA 仍 200，UA 无辜）；②剥到最小头集后页面空白 → 源站对无 Accept 请求回 **`Content-Disposition: attachment`**（浏览器当下载不渲染）；③终版=**头白名单转发**（accept/accept-language/range/if-none-match/if-modified-since/user-agent）+ **响应删 Content-Disposition** + html 补 charset——此后浏览器正常渲染；**Accept-Encoding 千万别手动设**（Workers 透明解压会被破坏，实测页面空白）
+  - **缓存策略**：png/ico/字体边缘缓存 1 天、vrm/vrma 10 分钟、bundle/styles（自带 ?v=）1 天、json/html 一律 no-store（保证部署即时可见+live.json 新鲜）；CF 免费版缓存按边缘节点隔离（国内不同请求落不同 PoP 各自冷启），15MB 模型**首载 20~45s、同节点二次秒下**——若日后要国内极速，回头走 TCB 直接绑域名（需控制台签证书，见 v12 记录），Worker 路线优先保「全自动、零维护」
+  - **实测（公网真地址双设备）**：`https://zc.leige.online/` 匿名登录+watch 连接 ✔ → A 页换模型 → 云文档更新 → B 页跟随收敛 ✔（测试超时从 25s 放宽到 90s 适配 CF 首载节奏）；`test-cloud-sync.mjs` 修 catch 块作用域 bug（A/B 提升到外层，失败时控制台转储才真正打印）
+  - **已知非问题**：新建 DNS 记录在部分本地解析器（114DNS）有负缓存残留，本机浏览器间歇「无法访问」——强制 IP 直连 200、阿里 DNS 解析正常、Worker/证书/绑定 API 确认无恙，负缓存消散（分钟~小时级）自然恢复；真实用户（手机网络）无此历史查询不受影响
+  - 账内发现：leige.online 子域家族已在 CF Workers 上（mail/pet/www/game/studio/easy/k/dl/yu），zc-pet 是最新成员
 - **v1.0.261128-12**（2026-11-28）
   - **云版桌宠彻底无电脑（跨设备同步上云）**：新增云同步通道 `src/sync/cloud.js`——CDN 页匿名登录 CloudBase，`watch` 实时数据库共享文档 `pet_state/global`，任何设备在控制台换模型/换待机动画即写文档，**所有打开链接的设备实时跟随**（电脑开不开机都行）；本地选择先立即生效再上行（沿用 v11 的本地优先架构），PC WebSocket 通道保留为「电脑在线」快车道（漫游移交/`--play` 等仍走隧道），云通道是永在线主干——两通道 fan-in 到同一组回调，app.js 按 basename 去重天然防环
   - **云端一次性配置**（一次性，已全部就位）：集合 `pet_state`（CLI `db nosql execute` 建）+ 权限规则 `{"read": true, "write": true}`（API `ModifySafeRule`，AclTag=CUSTOM——匿名可读写；READWRITE 等简单标签不含「所有用户可写」）；匿名登录环境默认可用；`@cloudbase/js-sdk@3.11.2` 以子路径 `app/auth/database/realtime` 按需动态 import（仅 CDN 页加载，桌面/LAN bundle 不背这 ~250KB）
@@ -198,7 +205,7 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 四期 | 漫游交接（跑出/跑入动画，断线自动回家，`--show` 召回） | ✅ 已实现 |
 | 云版 | 固定链接完整播放器（CDN 托管，电脑关机可玩） | ✅ 已实现 |
 | 云版 | 跨设备云同步（CloudBase 实时数据库，匿名登录，无电脑跟随） | ✅ 已实现 |
-| 云版 | 自定义域名 `zc.leige.online` | 🔧 绑定中（待证书） |
+| 云版 | 自定义域名 `zc.leige.online`（CF Worker 前置 + TCB 内容） | ✅ 已上线 |
 
 ## 技术栈
 
@@ -244,6 +251,7 @@ ai-live3d/
 ├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
 ├── assets/                  # icon.png / tray.png + PWA（manifest.webmanifest / sw.js / icon-{192,512}.png）
 ├── .claude/skills/live3d-pet/SKILL.md  # Claude Code 遥控 skill（命令行通道）
+├── cloud/zc-worker/         # zc.leige.online 的 CF Worker 反代（wrangler.toml + src/worker.js，头白名单/缓存/路径重写）
 ├── scripts/gen_icon.py      # 图标生成脚本
 ├── scripts/make-portable.bat # 便携 zip 打包（无需 Node 的分发包）
 ├── dist/bundle.js           # esbuild 产物（不入 git，npm start 自动构建）

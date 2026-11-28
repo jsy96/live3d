@@ -1,0 +1,10 @@
+name = "zc-pet"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+account_id = "91f7881252ade23327a6bd1b6cfd4e5f"
+
+# zc.leige.online as a Workers Custom Domain: Cloudflare auto-provisions the
+# edge certificate and the DNS record (same mechanism as dl.leige.online).
+routes = [
+  { pattern = "zc.leige.online", custom_domain = true }
+]

@@ -155,11 +155,12 @@ async function waitFor(fn, ms, label) {
   throw new Error(`timeout: ${label}`);
 }
 
+let A, B;
 try {
   // Both browsers stay open: the push path (watch onChange) is what we test.
-  const A = await openBrowser(PORT, 'A');
+  A = await openBrowser(PORT, 'A');
   console.log('A open');
-  const B = await openBrowser(PORT + 1, 'B');
+  B = await openBrowser(PORT + 1, 'B');
   console.log('B open');
 
   await waitFor(async () => (await A.eval('document.querySelectorAll(".web-mchip").length')) > 0, 30000, 'A chips');
@@ -189,7 +190,7 @@ try {
     const chips = JSON.parse(await B.eval(chipExpr));
     const cur = chips.find((c) => c.cur);
     return cur && cur.t === target.t ? cur.t : null;
-  }, 25000, 'B follows A pick');
+  }, 90000, 'B follows A pick');
   console.log(`B converged to: ${bAfterName} ✔`);
 
   const aAfterName = (JSON.parse(await A.eval(chipExpr))).find((c) => c.cur)?.t;
