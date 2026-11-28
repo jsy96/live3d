@@ -7,6 +7,13 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-7**（2026-11-28）
+  - **修复：iPhone 走公网链接「模型加载失败」**（老金真机反馈）——页面/API/bundle 均正常、仅 15MB 模型大文件传输挂，双管齐下：
+    - **模型/动画请求绕过 Service Worker**（`sw.js` 对 `/models/`、`/animations/` 不再 `respondWith`）：WebKit 的 SW fetch 对大二进制响应有 Chrome 没有的怪癖，直连原生网络栈
+    - **服务端 gzip**（`lan.js`，zlib level 6 + 按 mtime 缓存压缩结果、FIFO 上限 40 条）：模型 15MB→11.5MB（VRM 纹理已压缩，文本类资产压缩比更高），`Vary: Accept-Encoding`、md5 解压校验一致
+    - **模型加载自动重试一次**（`app.js` loadModel 内层 try）：移动网络经隧道下载 30-40s 途中抖动不再直接报错
+  - 实测：本机 gzip 下载 md5 与原文件一致；公网隧道模型 11.5MB/31s（原 15MB 需 ~41s，上行带宽 ~3Mbps 是硬瓶颈）；回归 step1/step2 通过；隧道已关（`[tunnel] stopped`）
+  - 待老金 iPhone 复测确认；若仍失败，读取面板上「模型加载失败：」后面的具体错误文本回报
 - **v1.0.261128-6**（2026-11-28）
   - **公网链接（借桌宠给外地朋友，代码已备好待启用）**：新增 `main/tunnel.js`——cloudflared 快速隧道把局域网服务暴露为 `https://*.trycloudflare.com` 公网地址（免费、无需账号/公网 IP/端口转发），朋友手机浏览器打开即玩（还顺便满足 Android PWA 的 HTTPS 要求）；托盘 `Public link (internet)` 开关 / CLI `--tunnel <on|off|toggle>`；开启后**扫码窗口主二维码自动切换为公网地址**；朋友页面作为普通漫游客户端出现在设备列表——「Send pet to phone」选他的手机、`--show` 召回，整套定向漫游机制直接复用；`wss://` 适配已在 roaming.js（https 页面自动切换）；关闭 LAN 时联动关闭隧道；退出前 `before-quit` 收掉进程
   - **依赖与安全**：需 cloudflared CLI（`winget install Cloudflare.cloudflared`；本机装于 `%LOCALAPPDATA%\Programs\cloudflared\cloudflared.exe` 2026.11.2——winget 下载超时/GitHub 被墙，经老金确认后走其镜像 `dl.leige.online` 下载）；快速隧道 URL 即凭据（运行期间公网可访问 models/animations），借完就关；`trycloudflare.com` 为官方免费临时隧道，重启换地址

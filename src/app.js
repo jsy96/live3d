@@ -61,7 +61,15 @@ async function main() {
   async function loadModel(entry) {
     try {
       const url = typeof entry === 'string' ? entry : entry.url;
-      const vrm = await loadVRM(viewer, url);
+      let vrm;
+      try {
+        vrm = await loadVRM(viewer, url);
+      } catch (retryable) {
+        // Mobile networks (especially via the public tunnel) can hiccup
+        // mid-download; one automatic retry before surfacing the failure.
+        console.warn(`[ai-live3d] model load failed once (${retryable.message}); retrying`);
+        vrm = await loadVRM(viewer, url);
+      }
       const mixer = new ExpressionMixer(vrm);
       animator = new Animator(vrm, mixer);
       hitTester = new HitTester(vrm);

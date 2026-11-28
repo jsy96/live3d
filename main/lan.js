@@ -25,6 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const dgram = require('node:dgram');
+const zlib = require('node:zlib');
 const { BrowserWindow } = require('electron');
 const { APP_VERSION } = require('./version');
 
@@ -174,33 +175,79 @@ function createLanServer(log, hooks = {}) {
     res.end(text);
   }
 
-  function serveFile(res, absPath, head) {
+  // --- gzip for large payloads ------------------------------------------------
+  // A 15MB VRM over a home uplink (possibly through the Cloudflare tunnel) is
+  // the slowest part of the phone experience; VRM/GLB/Vrma compress ~2.5-3x.
+  // Compressed buffers are cached per file (keyed on mtime) so repeat loads
+  // cost no CPU.
+  const gzipCache = new Map(); // absPath -> { mtimeMs, buf }
+  const GZIP_MAX_ENTRIES = 40;
+  const GZIP_TYPES = /\.(vrm|glb|vrma|js|css|json|html|webmanifest)$/i;
+
+  function gzippedBuffer(absPath, mtimeMs) {
+    const hit = gzipCache.get(absPath);
+    if (hit && hit.mtimeMs === mtimeMs) return Promise.resolve(hit.buf);
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      fs
+        .createReadStream(absPath)
+        .pipe(zlib.createGzip({ level: 6 }))
+        .on('data', (c) => chunks.push(c))
+        .on('error', reject)
+        .on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (gzipCache.size >= GZIP_MAX_ENTRIES) {
+            gzipCache.delete(gzipCache.keys().next().value); // FIFO eviction
+          }
+          gzipCache.set(absPath, { mtimeMs, buf });
+          resolve(buf);
+        });
+    });
+  }
+
+  function serveFile(req, res, absPath, head) {
     fs.stat(absPath, (err, st) => {
       if (err || !st.isFile()) {
         sendText(res, 404, 'not found');
         return;
       }
       const type = MIME[path.extname(absPath).toLowerCase()] ?? 'application/octet-stream';
-      res.writeHead(200, {
-        'Content-Type': type,
-        'Content-Length': st.size,
-        // Bundled code changes with every rebuild; models/animations are
-        // immutable per file name, so only those may be cached.
-        'Cache-Control': /\.(vrm|glb|vrma)$/i.test(absPath) ? 'public, max-age=3600' : 'no-store',
-      });
-      if (head) {
-        res.end();
+      const cache = /\.(vrm|glb|vrma)$/i.test(absPath) ? 'public, max-age=3600' : 'no-store';
+      const wantsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+
+      const sendPlain = () => {
+        res.writeHead(200, { 'Content-Type': type, 'Content-Length': st.size, 'Cache-Control': cache });
+        if (head) {
+          res.end();
+          return;
+        }
+        const stream = fs.createReadStream(absPath);
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+      };
+
+      if (wantsGzip && st.size > 1024 && GZIP_TYPES.test(absPath)) {
+        gzippedBuffer(absPath, st.mtimeMs)
+          .then((buf) => {
+            res.writeHead(200, {
+              'Content-Type': type,
+              'Content-Encoding': 'gzip',
+              'Content-Length': buf.length,
+              Vary: 'Accept-Encoding',
+              'Cache-Control': cache,
+            });
+            res.end(head ? undefined : buf);
+          })
+          .catch(sendPlain);
         return;
       }
-      const stream = fs.createReadStream(absPath);
-      stream.on('error', () => res.destroy());
-      stream.pipe(res);
+      sendPlain();
     });
   }
 
   // Basename-only resolution: subdirectories, ".." and unknown extensions are
   // rejected, so only whitelisted files inside the two content dirs are served.
-  function serveFromDir(res, dir, rawName, exts, head) {
+  function serveFromDir(req, res, dir, rawName, exts, head) {
     let name;
     try {
       name = decodeURIComponent(rawName);
@@ -216,7 +263,7 @@ function createLanServer(log, hooks = {}) {
       sendText(res, 404, 'not found');
       return;
     }
-    serveFile(res, path.join(dir, name), head);
+    serveFile(req, res, path.join(dir, name), head);
   }
 
   // --- WebSocket live sync (phones) -----------------------------------------
@@ -317,15 +364,15 @@ function createLanServer(log, hooks = {}) {
       }
       if (p === '/src/index.html') {
         log(`[lan] page opened from ${req.socket.remoteAddress ?? '?'}`);
-        serveFile(res, path.join(APP_ROOT, 'src', 'index.html'), head);
+        serveFile(req, res, path.join(APP_ROOT, 'src', 'index.html'), head);
         return;
       }
       if (p === '/src/styles.css') {
-        serveFile(res, path.join(APP_ROOT, 'src', 'styles.css'), head);
+        serveFile(req, res, path.join(APP_ROOT, 'src', 'styles.css'), head);
         return;
       }
       if (p === '/dist/bundle.js') {
-        serveFile(res, path.join(APP_ROOT, 'dist', 'bundle.js'), head);
+        serveFile(req, res, path.join(APP_ROOT, 'dist', 'bundle.js'), head);
         return;
       }
       if (p === '/api/models') {
@@ -342,23 +389,23 @@ function createLanServer(log, hooks = {}) {
       }
       // PWA installability (home-screen icon, standalone launch).
       if (p === '/manifest.webmanifest') {
-        serveFile(res, path.join(APP_ROOT, 'assets', 'manifest.webmanifest'), head);
+        serveFile(req, res, path.join(APP_ROOT, 'assets', 'manifest.webmanifest'), head);
         return;
       }
       if (p === '/sw.js') {
-        serveFile(res, path.join(APP_ROOT, 'assets', 'sw.js'), head);
+        serveFile(req, res, path.join(APP_ROOT, 'assets', 'sw.js'), head);
         return;
       }
       if (p === '/icon-192.png' || p === '/icon-512.png') {
-        serveFile(res, path.join(APP_ROOT, 'assets', p.slice(1)), head);
+        serveFile(req, res, path.join(APP_ROOT, 'assets', p.slice(1)), head);
         return;
       }
       if (p.startsWith('/models/')) {
-        serveFromDir(res, MODELS_DIR, p.slice('/models/'.length), ['.vrm', '.glb'], head);
+        serveFromDir(req, res, MODELS_DIR, p.slice('/models/'.length), ['.vrm', '.glb'], head);
         return;
       }
       if (p.startsWith('/animations/')) {
-        serveFromDir(res, ANIM_DIR, p.slice('/animations/'.length), ['.vrma'], head);
+        serveFromDir(req, res, ANIM_DIR, p.slice('/animations/'.length), ['.vrma'], head);
         return;
       }
       sendText(res, 404, 'not found');
