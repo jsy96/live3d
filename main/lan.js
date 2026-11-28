@@ -38,6 +38,8 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+  '.png': 'image/png',
   '.vrm': 'model/gltf-binary',
   '.glb': 'model/gltf-binary',
   '.vrma': 'application/octet-stream',
@@ -308,6 +310,19 @@ function createLanServer(log, hooks = {}) {
       }
       if (p === '/api/version') {
         sendJson(res, 200, { version: APP_VERSION }, head);
+        return;
+      }
+      // PWA installability (home-screen icon, standalone launch).
+      if (p === '/manifest.webmanifest') {
+        serveFile(res, path.join(APP_ROOT, 'assets', 'manifest.webmanifest'), head);
+        return;
+      }
+      if (p === '/sw.js') {
+        serveFile(res, path.join(APP_ROOT, 'assets', 'sw.js'), head);
+        return;
+      }
+      if (p === '/icon-192.png' || p === '/icon-512.png') {
+        serveFile(res, path.join(APP_ROOT, 'assets', p.slice(1)), head);
         return;
       }
       if (p.startsWith('/models/')) {

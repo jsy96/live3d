@@ -7,6 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-2**（2026-11-28）
+  - **PWA 化（手机端去浏览器壳）**：`assets/manifest.webmanifest`（standalone/主题色/192+512 图标，含 maskable）+ `assets/sw.js`（网络直通的最小 service worker，桌宠天然依赖局域网 PC 无离线可缓存，SW 仅为满足安装条件）+ `index.html` iOS 元标签（`apple-mobile-web-app-capable`/status-bar/title/touch-icon）+ 渲染层 web 模式注册 SW；LAN 服务新增 `/manifest.webmanifest`、`/sw.js`、`/icon-{192,512}.png` 路由，图标由 `assets/icon.png` (256) LANCZOS 放缩生成
+  - **效果分平台**：**iPhone**（Safari 分享 → 添加到主屏幕）＝真·独立全屏应用，无任何浏览器 UI（iOS 不要求 HTTPS）；**Android**（Chrome/Edge「安装」需 HTTPS，局域网 http 不满足）＝「添加到主屏幕」得到快捷方式，打开仍带地址栏——彻底去壳需打包真 APK（Capacitor 包同一套网页代码，需另装 Android SDK），按需再做
+  - 实测：CDP 真浏览器确认 `swRegistered: true, swState: activated`、manifest 关联正确、四个新路由 200（MIME `application/manifest+json`/`image/png`）；桌面端 file:// 加载不受影响（缺 manifest 仅控制台警告）；iOS 真机表现待老金验收（元标签为 Apple 官方标准机制）
 - **v1.0.261128-1**（2026-11-28）
   - **WebSocket 实时同步（四期第二片）**：LAN 服务新增 `/ws` 端点（`ws` 包，零传递依赖）——桌面端换模型/换待机动画/转身/`--play` 单次动作**实时广播到所有连接的手机**；滚轮转向经 `facing:report` 上行同步。协议见 `src/sync/roaming.js` 头注（`state`/`play`/`pick`/`roam` 四类消息，字段缺省=不变）
   - **手机端控制台**：网页右下角 ☰ 悬浮按钮打开「桌宠控制台」（`src/web-picker.js`）——漫游按钮 / 朝向五档 / 模型列表 / 126 个待机动画分组+实时筛选，**选择经 WS 上行到桌面应用后广播回传**，所有设备收敛到同一选择（勾选高亮跟随）；模型按 basename 去重防止回声重载
@@ -177,7 +181,7 @@ ai-live3d/
 │   └── sync/roaming.js      # 四期接口：设备间漫游协议
 ├── models/                  # 放 .vrm 模型（见 models/README.md，不入 git）
 ├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
-├── assets/                  # icon.png / tray.png（脚本生成）
+├── assets/                  # icon.png / tray.png + PWA（manifest.webmanifest / sw.js / icon-{192,512}.png）
 ├── .claude/skills/live3d-pet/SKILL.md  # Claude Code 遥控 skill（命令行通道）
 ├── scripts/gen_icon.py      # 图标生成脚本
 ├── scripts/make-portable.bat # 便携 zip 打包（无需 Node 的分发包）
@@ -231,9 +235,12 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 
 1. 托盘图标右键 → **Show QR code**（或 `start-pet.bat --qr`），弹出扫码窗口
 2. 手机扫码（或浏览器直接输入 `http://<电脑IP>:31790`，窗口里列了全部候选地址）
-3. 手机上出现同款桌宠：自动加载默认模型与待机/反应动画，**摸头滑动 / 拖动 / 戳 / 双击欢呼**全部触摸手势可用；建议浏览器菜单里「添加到主屏幕」获得类 App 全屏体验
-4. 手机右下角 **☰ 悬浮按钮**打开「桌宠控制台」：换模型 / 换待机动画（126 个可筛选）/ 转身朝向，选择实时同步到电脑和其它已连接手机；电脑端的切换（托盘/右键菜单/CLI）也会实时推到手机
-5. **漫游**：控制台里「留在这里 📱」或托盘 `Send pet to phone`——桌宠跑出电脑屏幕边缘、从手机右缘跑进来（电脑窗口隐藏）；「送到电脑 🖥」或 CLI `--show` 召回；桌宠在电脑上时手机顶部有「点此召回」胶囊条；**手机网页全部关闭时桌宠自动跑回电脑**，不会走丢
+3. 手机上出现同款桌宠：自动加载默认模型与待机/反应动画，**摸头滑动 / 拖动 / 戳 / 双击欢呼**全部触摸手势可用
+4. **装成 App（去浏览器壳）**：
+   - **iPhone**：Safari 分享 →「添加到主屏幕」→ 得到独立图标，点开**全屏无浏览器 UI**（PWA standalone）
+   - **Android**：浏览器菜单 →「添加到主屏幕」→ 得到快捷方式（打开带地址栏；Chrome 规定免地址栏的「安装」仅限 HTTPS，局域网 http 不满足——要彻底去壳需另打 APK）
+5. 手机右下角 **☰ 悬浮按钮**打开「桌宠控制台」：换模型 / 换待机动画（126 个可筛选）/ 转身朝向，选择实时同步到电脑和其它已连接手机；电脑端的切换（托盘/右键菜单/CLI）也会实时推到手机
+6. **漫游**：控制台里「留在这里 📱」或托盘 `Send pet to phone`——桌宠跑出电脑屏幕边缘、从手机右缘跑进来（电脑窗口隐藏）；「送到电脑 🖥」或 CLI `--show` 召回；桌宠在电脑上时手机顶部有「点此召回」胶囊条；**手机网页全部关闭时桌宠自动跑回电脑**，不会走丢
 
 注意：
 

@@ -34,7 +34,13 @@ async function main() {
   const viewer = createViewer(canvas);
   // Web mode (phone browser via the LAN server) gets its own backdrop; the
   // desktop transparent window must stay transparent.
-  if (!platform.isDesktop) document.body.classList.add('web');
+  if (!platform.isDesktop) {
+    document.body.classList.add('web');
+    // PWA: register the (network-passthrough) service worker so "Add to Home
+    // Screen" yields a standalone app. Failure is non-fatal — the page works
+    // fine as a plain tab too.
+    navigator.serviceWorker?.register('/sw.js').catch(() => {});
+  }
   let animator = null;
   let hitTester = null;
   let interactor = null;

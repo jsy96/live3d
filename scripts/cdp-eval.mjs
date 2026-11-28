@@ -23,7 +23,13 @@ const page = list.find((t) => t.type === 'page' && t.url.includes('31790'));
 if (!page) throw new Error('pet page target not found');
 const ws = new WebSocket(page.webSocketDebuggerUrl); // no Origin header: DevTools rejects foreign origins
 await new Promise((r) => ws.on('open', r));
-ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: expr, returnByValue: true } }));
+ws.send(
+  JSON.stringify({
+    id: 1,
+    method: 'Runtime.evaluate',
+    params: { expression: expr, returnByValue: true, awaitPromise: true },
+  })
+);
 ws.on('message', (d) => {
   const m = JSON.parse(d.toString());
   if (m.id === 1) {

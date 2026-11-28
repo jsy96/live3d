@@ -1,0 +1,16 @@
+{
+  "name": "AI Live3D Pet",
+  "short_name": "Live3D",
+  "description": "AI 3D desktop pet roaming between the PC and the phone",
+  "start_url": "/src/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1c2436",
+  "theme_color": "#1c2436",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
