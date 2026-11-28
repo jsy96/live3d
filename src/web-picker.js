@@ -4,8 +4,9 @@
 //   2. The console sheet: model chips + collapsible animation groups with a
 //      filter. Kept deliberately short — facing is free-rotate by dragging
 //      the background (src/interaction/mouse.js), not chips in here.
-// Selections travel upstream over the roaming WebSocket; the desktop applies
-// them and broadcasts back, so every device (including this one) converges.
+// Selections apply LOCALLY first (the page is a full standalone player —
+// works with the PC offline) and are relayed upstream when the roaming link
+// happens to be connected; every connected device converges.
 import { platform } from './platform.js';
 
 function basename(p) {
@@ -28,7 +29,7 @@ function groupOf(file) {
   return 'Emotions & Others';
 }
 
-export function createWebPicker({ models, animations }) {
+export function createWebPicker({ models, animations, onPickModel, onPickAnimation }) {
   const state = { model: null, animation: null };
 
   const el = (tag, cls, text) => {
@@ -81,7 +82,7 @@ export function createWebPicker({ models, animations }) {
     const chip = el('button', 'web-mchip', prettyName(m.path));
     // Model switches are dramatic — close the console so the result shows.
     chip.addEventListener('click', () => {
-      platform.setModelRemote(basename(m.path));
+      onPickModel?.(m);
       openSheet(false);
     });
     chipRow.append(chip);
@@ -108,7 +109,7 @@ export function createWebPicker({ models, animations }) {
       groups.set(label, g);
     }
     const row = el('div', 'web-row', prettyName(a.path));
-    row.addEventListener('click', () => platform.setAnimationRemote(basename(a.path)));
+    row.addEventListener('click', () => onPickAnimation?.(a));
     g.box.append(row);
     g.rows.push({ row, name: basename(a.path) });
   }

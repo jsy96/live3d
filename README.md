@@ -7,6 +7,9 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-11**（2026-11-28）
+  - **CDN 页离线可玩（电脑关机也能完整玩）**：手机端控制台的换模型/换待机动画改为**本地立即生效 + 在线则同步**（picker 回调重构为 `onPickModel/onPickAnimation` 注入 app.js：先本地 `loadModel/loadAnimation`，再 `setModelRemote/setAnimationRemote` 上行；广播回传按 basename 去重不重载）——CDN 页本身就是完整单机播放器，朋友拿固定链接随时可玩，**你电脑开不开机都行**；电脑在线时选择同步全端、漫游移交可用
+  - 实测：关隧道（live.json 自动去 tunnelUrl）→ CDN 页纯本地从 AvatarSample_A 切到 Seed-san（chip 移动、无报错）；开隧道 → live.json 自动带新 tunnelUrl → 页面重连 WS、勾选收敛到桌面当前模型；`live.json` 双向自动更新（开/关隧道均验证）
 - **v1.0.261128-10**（2026-11-28）
   - **CDN 正式上线腾讯云 CloudBase（环境 `ajmj-d2g1eishpbe7677fe`）**：桌宠手机页固定地址 **`https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`**——模型从 CDN 边缘加载（15MB 实测 **2.6s**，隧道直连 31~41s，提速 12 倍+）、固定域名固定 HTTPS（Android 可装全屏 PWA）；`live.json` 活地址由 PC 注册器（`main/tcb.js`）在 LAN/隧道变化时自动发布到 `/pet/live.json`（弃用云函数方案——静态 JSON + 同源拉取即可，零函数零数据库）；`@cloudbase/cli` 装为 devDependency（`cloudbase login` 一次授权后 PC 自动发布）
   - **架构最终形**：`https 页面(CDN)` → `live.json(CDN)` → `wss://隧道(电脑)`——HTTPS 页连 `ws://` 内网地址属混合内容必被拦，**远程同步只走隧道**；同一 Wi-Fi 场景请继续用电脑直连页 `http://<ip>:31790`（功能最全）

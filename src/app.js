@@ -288,8 +288,22 @@ async function main() {
   });
 
   // Phone console (web only): roam buttons + model/animation/facing picker.
+  // Picks apply locally FIRST (the page is a full standalone player — the
+  // friend can play with the PC offline) and relay to the desktop when the
+  // roaming link is up; the broadcast then converges every other device.
   if (!platform.isDesktop) {
-    webPicker = createWebPicker({ models, animations: [...animMap.values()] });
+    webPicker = createWebPicker({
+      models,
+      animations: [...animMap.values()],
+      onPickModel: (entry) => {
+        loadModel(entry);
+        platform.setModelRemote(entry.path.split(/[\\/]/).pop());
+      },
+      onPickAnimation: (entry) => {
+        loadAnimation(entry);
+        platform.setAnimationRemote(entry.path.split(/[\\/]/).pop());
+      },
+    });
     // The initial model/animation loaded above predate the picker's creation.
     webPicker.select({ model: currentModelName, animation: currentAnimName });
   }
