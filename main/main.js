@@ -280,10 +280,12 @@ function registerIpc() {
   // Roaming: the desktop renderer finished its run-off animation.
   ipcMain.on('roam:exited', () => finishGoPhone());
 
-  // Wheel-turned facing from the renderer; store + relay to phones.
+  // Wheel-turned (desktop) or background-drag (phone) facing; store + relay
+  // to every device including the other renderer (same pet, same angle).
   ipcMain.on('facing:report', (_event, deg) => {
     if (Number.isFinite(deg)) {
       currentFacingDeg = deg;
+      win?.webContents.send('facing:set', deg);
       lan?.broadcastState({ facing: deg });
     }
   });

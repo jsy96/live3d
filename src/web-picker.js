@@ -1,13 +1,12 @@
-// Phone-only control panel (web mode). A floating button opens a sheet with:
-//   - roaming buttons (send the pet to the PC / bring it back here)
-//   - facing chips (0/45/90/135/180)
-//   - model list (from the LAN API)
-//   - animation list, grouped + filterable (126 clips)
+// Phone-only UI (web mode). Two parts:
+//   1. A floating dock (right edge): roam buttons are ALWAYS available, the
+//      ☰ button toggles the console sheet.
+//   2. The console sheet: model chips + collapsible animation groups with a
+//      filter. Kept deliberately short — facing is free-rotate by dragging
+//      the background (src/interaction/mouse.js), not chips in here.
 // Selections travel upstream over the roaming WebSocket; the desktop applies
 // them and broadcasts back, so every device (including this one) converges.
 import { platform } from './platform.js';
-
-const FACING_STEPS = [0, 45, 90, 135, 180];
 
 function basename(p) {
   return String(p ?? '').split(/[\\/]/).pop().toLowerCase();
@@ -39,15 +38,24 @@ export function createWebPicker({ models, animations }) {
     return n;
   };
 
-  // --- floating button + sheet skeleton
+  // --- floating dock: roam shortcuts + console toggle
+  const dock = el('div', 'web-dock');
+  const toPhone = el('button', 'web-fab web-roam', '\u{1F4F1}');
+  toPhone.title = '留在这里（桌宠跑到手机）';
+  const toDesktop = el('button', 'web-fab web-roam', '\u{1F5A5}');
+  toDesktop.title = '送到电脑（桌宠回电脑）';
   const fab = el('button', 'web-fab', '☰');
   fab.title = '桌宠控制台';
+  toPhone.addEventListener('click', () => platform.roamTo('phone'));
+  toDesktop.addEventListener('click', () => platform.roamTo('desktop'));
+
   const sheet = el('div', 'web-sheet hidden');
   const recallChip = el('button', 'web-recall hidden', '\u{1F4F1} 桌宠在电脑上 · 点此召回');
   recallChip.addEventListener('click', () => platform.roamTo('phone'));
 
   fab.addEventListener('click', () => sheet.classList.toggle('hidden'));
-  document.body.append(fab, sheet, recallChip);
+  dock.append(toPhone, toDesktop, fab);
+  document.body.append(dock, sheet, recallChip);
 
   const close = el('button', 'web-close', '✕');
   close.addEventListener('click', () => sheet.classList.add('hidden'));
@@ -56,48 +64,33 @@ export function createWebPicker({ models, animations }) {
   head.append(title, close);
   sheet.append(head);
 
-  // --- roaming + facing quick controls
-  const roamRow = el('div', 'web-rowbtns');
-  const toDesktop = el('button', 'web-btn', '\u{1F5A5} 送到电脑');
-  const toPhone = el('button', 'web-btn', '留在这里 \u{1F4F1}');
-  toDesktop.addEventListener('click', () => platform.roamTo('desktop'));
-  toPhone.addEventListener('click', () => platform.roamTo('phone'));
-  roamRow.append(toDesktop, toPhone);
-
-  const faceRow = el('div', 'web-rowbtns');
-  const faceBtns = FACING_STEPS.map((deg) => {
-    const b = el('button', 'web-chip', `${deg}°`);
-    b.addEventListener('click', () => platform.setFacingRemote(deg));
-    faceRow.append(b);
-    return { b, deg };
-  });
-
-  sheet.append(el('div', 'web-sec-h', '漫游'), roamRow);
-  sheet.append(el('div', 'web-sec-h', '朝向'), faceRow);
-
-  // --- model list
+  // --- models: compact horizontal chips instead of tall rows
   sheet.append(el('div', 'web-sec-h', '模型'));
-  const modelRows = models.map((m) => {
-    const row = el('div', 'web-row', prettyName(m.path));
-    row.addEventListener('click', () => platform.setModelRemote(basename(m.path)));
-    sheet.append(row);
-    return { row, name: basename(m.path) };
+  const chipRow = el('div', 'web-chips');
+  sheet.append(chipRow);
+  const modelChips = models.map((m) => {
+    const chip = el('button', 'web-mchip', prettyName(m.path));
+    chip.addEventListener('click', () => platform.setModelRemote(basename(m.path)));
+    chipRow.append(chip);
+    return { chip, name: basename(m.path) };
   });
 
-  // --- animation list (grouped, filterable)
+  // --- animations: collapsible groups + filter (sheet stays short by default)
   sheet.append(el('div', 'web-sec-h', '待机动画'));
   const filter = el('input', 'web-filter');
   filter.type = 'search';
   filter.placeholder = '筛选动画...';
   sheet.append(filter);
 
-  const groups = new Map(); // label -> { box, rows: [{row,name}] }
+  const groups = new Map(); // label -> { box, headEl, rows: [{row,name}] }
   for (const a of animations) {
     const label = groupOf(a.path);
     let g = groups.get(label);
     if (!g) {
-      g = { box: el('div', 'web-group'), rows: [] };
-      g.box.append(el('div', 'web-group-h', `${label} (${0})`));
+      g = { box: el('div', 'web-group'), headEl: null, rows: [] };
+      g.headEl = el('button', 'web-gh', `${label} (0) ▸`);
+      g.headEl.addEventListener('click', () => g.box.classList.toggle('open'));
+      g.box.append(g.headEl);
       sheet.append(g.box);
       groups.set(label, g);
     }
@@ -107,7 +100,7 @@ export function createWebPicker({ models, animations }) {
     g.rows.push({ row, name: basename(a.path) });
   }
   for (const [label, g] of groups) {
-    g.box.firstChild.textContent = `${label} (${g.rows.length})`;
+    g.headEl.textContent = `${label} (${g.rows.length}) ▸`;
   }
 
   filter.addEventListener('input', () => {
@@ -120,16 +113,17 @@ export function createWebPicker({ models, animations }) {
         if (hit) visible++;
       }
       g.box.classList.toggle('filtered-out', visible === 0);
+      // Typing auto-expands matching groups; clearing collapses them again.
+      g.box.classList.toggle('open', !!q && visible > 0);
     }
   });
 
   // --- selection highlighting
   function refresh() {
-    for (const r of modelRows) r.row.classList.toggle('cur', r.name === state.model);
+    for (const c of modelChips) c.chip.classList.toggle('cur', c.name === state.model);
     for (const g of groups.values()) {
       for (const r of g.rows) r.row.classList.toggle('cur', r.name === state.animation);
     }
-    for (const { b, deg } of faceBtns) b.classList.toggle('cur', deg === state.facing);
   }
 
   /** Called by app.js whenever the model/animation actually changed. */
@@ -138,7 +132,6 @@ export function createWebPicker({ models, animations }) {
     if (sel.animation !== undefined) {
       state.animation = sel.animation ? basename(sel.animation) : null;
     }
-    if (sel.facing !== undefined) state.facing = sel.facing;
     refresh();
   }
 

@@ -4,7 +4,8 @@ import WebSocket from 'ws';
 import http from 'node:http';
 
 const port = Number(process.argv[2] ?? 9333);
-const expr = process.argv[3] ?? 'document.title';
+const urlMatch = process.argv[3] ?? '';
+const expr = process.argv[4] ?? 'document.title';
 
 function getJson(path) {
   return new Promise((resolve, reject) => {
@@ -19,8 +20,8 @@ function getJson(path) {
 }
 
 const list = await getJson('/json/list');
-const page = list.find((t) => t.type === 'page' && t.url.includes('31790'));
-if (!page) throw new Error('pet page target not found');
+const page = list.find((t) => t.type === 'page' && t.url.includes(urlMatch));
+if (!page) throw new Error(`page target not found for ${urlMatch}`);
 const ws = new WebSocket(page.webSocketDebuggerUrl); // no Origin header: DevTools rejects foreign origins
 await new Promise((r) => ws.on('open', r));
 ws.send(

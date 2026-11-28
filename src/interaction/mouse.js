@@ -35,6 +35,10 @@ export class MouseInteractor {
     this._headLast = null;
     // Last quick tap (for double-tap detection; see _classifyTap).
     this._lastTap = null;
+    // Web-mode free rotation: dragging the BACKGROUND (a miss on the pet)
+    // spins the turntable continuously; see _move.
+    this._orbit = null;
+    this._orbitReportedAt = 0;
 
     this._onMove = (e) => this._move(e);
     this._onDown = (e) => this._down(e);
@@ -83,6 +87,19 @@ export class MouseInteractor {
     this.hooks.onPointerNDC?.(ndc.x, ndc.y);
     const now = performance.now();
 
+    // Background drag (web only): free-angle turntable. On the desktop the
+    // background is click-through so this never fires there.
+    if (this._orbit) {
+      const dx = e.clientX - this._orbit.x;
+      this._orbit.x = e.clientX;
+      this.viewer.setFacing(this.viewer.facingTarget + dx * 0.45);
+      if (now - this._orbitReportedAt > 120) {
+        this._orbitReportedAt = now;
+        platform.reportFacing(this.viewer.facingTarget); // relayed to phones
+      }
+      return;
+    }
+
     if (this.dragging) {
       // Use screen coordinates: they stay stable while the window moves underneath.
       const dx = e.screenX - this.lastScreenX;
@@ -125,7 +142,11 @@ export class MouseInteractor {
   _down(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const region = this.hit.hit(e.clientX, e.clientY);
-    if (!region) return;
+    if (!region) {
+      // Empty space: on the phone this drag rotates the pet (any angle).
+      if (!platform.isDesktop) this._orbit = { x: e.clientX };
+      return;
+    }
     this.downAt = performance.now();
     this.downX = e.clientX;
     this.downY = e.clientY;
@@ -157,6 +178,11 @@ export class MouseInteractor {
 
   _up(e) {
     document.body.classList.remove('grabbing');
+    if (this._orbit) {
+      this._orbit = null;
+      platform.reportFacing(this.viewer.facingTarget); // final angle sync
+      return;
+    }
     if (this.dragging) {
       this.dragging = false;
       const quick =

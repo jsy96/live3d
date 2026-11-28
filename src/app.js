@@ -282,6 +282,8 @@ async function main() {
   // Phone console (web only): roam buttons + model/animation/facing picker.
   if (!platform.isDesktop) {
     webPicker = createWebPicker({ models, animations: [...animMap.values()] });
+    // The initial model/animation loaded above predate the picker's creation.
+    webPicker.select({ model: currentModelName, animation: currentAnimName });
   }
 
   // Startup done: the main process can now deliver queued CLI commands.
