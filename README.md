@@ -7,7 +7,10 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
-- **v1.0.261128-5**（2026-11-28）
+- **v1.0.261128-6**（2026-11-28）
+  - **公网链接（借桌宠给外地朋友，代码已备好待启用）**：新增 `main/tunnel.js`——cloudflared 快速隧道把局域网服务暴露为 `https://*.trycloudflare.com` 公网地址（免费、无需账号/公网 IP/端口转发），朋友手机浏览器打开即玩（还顺便满足 Android PWA 的 HTTPS 要求）；托盘 `Public link (internet)` 开关 / CLI `--tunnel <on|off|toggle>`；开启后**扫码窗口主二维码自动切换为公网地址**；朋友页面作为普通漫游客户端出现在设备列表——「Send pet to phone」选他的手机、`--show` 召回，整套定向漫游机制直接复用；`wss://` 适配已在 roaming.js（https 页面自动切换）；关闭 LAN 时联动关闭隧道；退出前 `before-quit` 收掉进程
+  - **依赖与安全**：需 cloudflared CLI（`winget install Cloudflare.cloudflared`；本会话 winget 0x80072ee2 超时、GitHub 直连被墙、镜像域名待老金确认，**尚未安装**——托盘项自动置灰，`--tunnel on` 仅落日志提示）；快速隧道 URL 即凭据（运行期间公网可访问 models/animations），借完就关；`trycloudflare.com` 为官方免费临时隧道，重启换地址
+  - 实测：无 cloudflared 时冷启动/step1/step2/LAN 页面全回归通过；隧道链路端到端验证**待安装后补**
   - **多手机定向漫游（老金需求：多台 iPhone 之间转来转去）**：每台手机获得身份（`hello` 携带 localStorage 持久化的 `Phone·xxxx` 名，电脑端选择器可区分）；「留在这里」**只发给点的那台**（`petLocation` = 手机 client id），其余手机瞬时收起副本——多台同屏不再分身；持有桌宠的手机断线 → 桌宠自动回家（按 id 精确判定）；托盘 `Send pet to phone` 在多台在线时弹**原生选择器**选目标；手机间可直接对转（A 的桌宠被 B 要走，无需先回电脑）
   - **修复：后台/被遮挡页面的跑出动画冻结**——浏览器对不可见页面暂停 rAF，桌宠永远跑不走；现在 `document.hidden` 时收到 exit 直接收起（跳过动画），真机上锁屏/切走的手机同样正确
   - 跨网络（不限同一局域网）方案：**Tailscale**（PC 与各 iPhone 各装一份、同一账号登录即组网，手机访问 `http://100.x.y.z:31790`，全部功能原样可用；Tailscale 网卡 IP 会自动出现在扫码窗口的候选地址里）；或自建公网中继（工程量大，未实现）
@@ -259,7 +262,9 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
    - **Android**：浏览器菜单 →「添加到主屏幕」→ 得到快捷方式（打开带地址栏；Chrome 规定免地址栏的「安装」仅限 HTTPS，局域网 http 不满足——要彻底去壳需另打 APK）
 5. 手机右下角**悬浮 dock**（📱 / 🖥 / ☰ 竖排三圆钮）：**📱 留在这里**、**🖥 送到电脑**随时可点；**☰ 桌宠控制台**——模型横向药丸 + 待机动画折叠分组（默认收起，点组名展开，筛选框自动展开匹配），选择实时同步到电脑和其它已连接手机；**空白处横向拖动**连续旋转桌宠（任意角度，拖身体仍是移动位置），旋转同步全端
 6. **漫游**：dock 的「📱 留在这里」或托盘 `Send pet to phone`——桌宠跑出电脑屏幕边缘、从手机右缘跑进来（电脑窗口隐藏）；「🖥 送到电脑」或 CLI `--show` 送回；**多台手机在线时定向移交**（谁点 📱 桌宠去谁那，其余台自动收起，托盘发送时弹选择器；手机之间可直接对转）；持有桌宠的手机断线/关页 → 桌宠自动回电脑，不会走丢
-7. **跨网络（手机走流量/不在同一 Wi-Fi）**：装 **Tailscale**（PC + 各 iPhone 登录同一账号，免费），手机访问 `http://<电脑的 100.x 地址>:31790`——该地址会自动出现在扫码窗口候选列表里，全部功能（同步/漫游）原样可用
+7. **跨网络（手机走流量/不在同一 Wi-Fi）**：两条路
+   - **公网链接（推荐，朋友零安装）**：托盘 `Public link (internet)` 或 `start-pet.bat --tunnel on`（需先 `winget install Cloudflare.cloudflared`）→ 得到 `https://xxx.trycloudflare.com`，发给朋友或让他扫二维码窗口里的新码；他玩完你 `--show` 召回、关掉隧道即可
+   - **Tailscale**：PC + 各 iPhone 登录同一账号（免费），手机访问 `http://<电脑的 100.x 地址>:31790`（自动出现在扫码窗口候选列表）；适合自己多设备长期用，借给朋友需他也装 Tailscale
 
 注意：
 

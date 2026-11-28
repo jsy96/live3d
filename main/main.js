@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createTray } = require('./tray');
 const { createLanServer } = require('./lan');
+const { createTunnel } = require('./tunnel');
 const { APP_VERSION } = require('./version');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
@@ -78,12 +79,21 @@ let win = null;
 let currentModelPath = null;
 let currentAnimationPath = null;
 let lan = null; // LAN web server for the phone (main/lan.js)
+let tunnel = null; // public internet tunnel (main/tunnel.js, cloudflared)
 let trayApi = null;
 
 /** Turn the LAN phone-access server on/off; refreshes the tray menu. */
 async function setLan(on) {
   if (!lan) return false;
-  const ok = on ? await lan.start() : (lan.stop(), true);
+  const ok = on ? await lan.start() : (tunnel?.stop(), lan.stop(), true);
+  trayApi?.refresh();
+  return ok;
+}
+
+/** Turn the public internet tunnel on/off (friend in another city). */
+function setTunnel(on) {
+  if (!tunnel) return false;
+  const ok = on ? tunnel.start() : (tunnel.stop(), true);
   trayApi?.refresh();
   return ok;
 }
@@ -395,6 +405,7 @@ function registerIpc() {
 //   --play <name>              play a clip from animations/ once, then idle
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
 //   --lan <on|off|toggle>      LAN phone-access web server
+//   --tunnel <on|off|toggle>   public internet link (cloudflared quick tunnel)
 //   --qr                       show the QR window for phones to scan
 //   --show                     show the pet (recalls it from a phone)
 const PLAY_ALIASES = {
@@ -439,6 +450,7 @@ function parseCliArgs(argv) {
     play: null,
     facing: null,
     lan: null,
+    tunnel: null,
     qr: false,
     show: false,
     hide: false,
@@ -463,6 +475,7 @@ function parseCliArgs(argv) {
     '--reaction': 'play',
     '--facing': 'facing',
     '--lan': 'lan',
+    '--tunnel': 'tunnel',
   };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
@@ -500,13 +513,20 @@ function dispatchCli(argv, source) {
     return;
   }
   if (cmds.devtools) win?.webContents.toggleDevTools();
-  // LAN / QR are main-process level, so they run even before the renderer is up.
+  // LAN / tunnel / QR are main-process level, so they run even before the renderer is up.
   if (cmds.lan != null) {
     const v = String(cmds.lan).toLowerCase();
     if (v === 'toggle') setLan(!lan?.running);
     else if (/^(on|1|true|yes|start)$/.test(v)) setLan(true);
     else if (/^(off|0|false|no|stop)$/.test(v)) setLan(false);
     else appendLog(`[cmd] lan: unknown value: ${cmds.lan}`);
+  }
+  if (cmds.tunnel != null) {
+    const v = String(cmds.tunnel).toLowerCase();
+    if (v === 'toggle') setTunnel(!tunnel?.running);
+    else if (/^(on|1|true|yes|start)$/.test(v)) setTunnel(true);
+    else if (/^(off|0|false|no|stop)$/.test(v)) setTunnel(false);
+    else appendLog(`[cmd] tunnel: unknown value: ${cmds.tunnel}`);
   }
   if (cmds.qr) {
     if (lan?.running) lan.showQr();
@@ -521,6 +541,7 @@ function dispatchCli(argv, source) {
     cmds.play != null ||
     cmds.facing != null ||
     cmds.lan != null ||
+    cmds.tunnel != null ||
     cmds.qr ||
     cmds.show ||
     cmds.devtools ||
@@ -595,6 +616,7 @@ if (!gotLock) {
     // Phone access: the LAN web server auto-starts so a phone can connect out
     // of the box (Windows will ask once to allow it through the firewall).
     lan = createLanServer(appendLog, {
+      getTunnelUrl: () => tunnel?.url ?? null,
       buildState: () => ({
         model: currentModelPath
           ? (phoneEntry(currentModelPath, MODELS_DIR, '/models/') ?? null)
@@ -641,6 +663,13 @@ if (!gotLock) {
     });
     await setLan(true);
 
+    // Public internet tunnel (cloudflared): off by default, turn on from the
+    // tray or --tunnel on when lending the pet to a remote friend.
+    tunnel = createTunnel(appendLog, {
+      getPort: () => lan?.port,
+      onUrl: () => trayApi?.refresh(),
+    });
+
     // Command-line args of THIS (first) instance, e.g. a cold
     // `start-pet.bat --play hello` launch; queued until the renderer is ready.
     // (After the LAN start so a cold `--lan off` wins over the auto-start.)
@@ -658,8 +687,14 @@ if (!gotLock) {
           running: lan?.running ?? false,
           url: lan?.lanUrl(),
           clients: lan?.clientsCount() ?? 0,
+          tunnel: {
+            running: tunnel?.running ?? false,
+            url: tunnel?.url ?? null,
+            available: tunnel?.available?.() ?? false,
+          },
         }),
         toggleLan: () => setLan(!lan?.running),
+        toggleTunnel: () => setTunnel(!tunnel?.running),
         showQr: () => (lan?.running ? lan.showQr() : setLan(true).then(() => lan?.showQr())),
         goPhone,
         goDesktop,
@@ -669,5 +704,9 @@ if (!gotLock) {
 
   app.on('window-all-closed', () => {
     app.quit();
+  });
+
+  app.on('before-quit', () => {
+    tunnel?.stop();
   });
 }

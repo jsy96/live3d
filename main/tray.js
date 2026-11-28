@@ -3,8 +3,8 @@ const path = require('node:path');
 const { APP_VERSION } = require('./version');
 
 // lanHooks (all optional so the tray still builds if LAN is unavailable):
-//   lanState() -> { running: bool, url: string|null, clients: number }
-//   toggleLan()/showQr()/goPhone()/goDesktop() -> click handlers
+//   lanState() -> { running, url, clients, tunnel: {running,url,available} }
+//   toggleLan()/toggleTunnel()/showQr()/goPhone()/goDesktop() -> click handlers
 // Returns { refresh } so the main process can rebuild the checkmarks after the
 // LAN server (async) starts/stops or phones connect/disconnect.
 function createTray(getWin, onPickModel, lanHooks = {}) {
@@ -12,7 +12,13 @@ function createTray(getWin, onPickModel, lanHooks = {}) {
   const tray = new Tray(icon);
 
   const buildMenu = () => {
-    const lan = lanHooks.lanState?.() ?? { running: false, url: null, clients: 0 };
+    const lan = lanHooks.lanState?.() ?? {
+      running: false,
+      url: null,
+      clients: 0,
+      tunnel: { running: false, url: null, available: false },
+    };
+    const t = lan.tunnel ?? { running: false, url: null, available: false };
     return Menu.buildFromTemplate([
       { label: `AI Live3D ${APP_VERSION}`, enabled: false },
       { type: 'separator' },
@@ -40,6 +46,14 @@ function createTray(getWin, onPickModel, lanHooks = {}) {
         type: 'checkbox',
         checked: lan.running,
         click: () => lanHooks.toggleLan?.(),
+      },
+      {
+        label: t.url ? `Public link: ${t.url.replace('https://', '')}` : 'Public link (internet)',
+        type: 'checkbox',
+        checked: t.running,
+        enabled: lan.running && t.available,
+        // Greyed with cloudflared missing: the click logs the install hint.
+        click: () => lanHooks.toggleTunnel?.(),
       },
       { label: 'Show QR code', click: () => lanHooks.showQr?.() },
       { type: 'separator' },

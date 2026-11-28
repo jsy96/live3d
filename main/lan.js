@@ -141,17 +141,22 @@ function createLanServer(log, hooks = {}) {
     return ips;
   }
 
-  /** Primary phone URL (best-guess LAN IP), null when not running. */
+  /** Primary phone URL: the public tunnel when up (friend in another city),
+   *  else the best-guess LAN IP. Null when not running. */
   function lanUrl() {
     if (!server) return null;
+    const tun = hooks.getTunnelUrl?.();
+    if (tun) return tun;
     const ip = orderedIps()[0];
     return ip ? urlOf(ip) : null;
   }
 
-  /** All phone URLs (one per LAN IPv4); primary first. Empty when off. */
+  /** All phone URLs, primary first: public tunnel, then LAN candidates. */
   function urls() {
     if (!server) return [];
-    return orderedIps().map(urlOf);
+    const tun = hooks.getTunnelUrl?.();
+    const list = orderedIps().map(urlOf);
+    return tun ? [tun, ...list] : list;
   }
 
   function sendJson(res, code, obj, head) {

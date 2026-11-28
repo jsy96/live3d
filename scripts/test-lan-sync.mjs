@@ -5,7 +5,7 @@
 import WebSocket from 'ws';
 
 const step = process.argv[2] ?? 'step1';
-const URL = 'ws://127.0.0.1:31790/ws';
+const URL = (process.env.LAN_WS_URL ?? "ws://127.0.0.1:31790") + "/ws";
 const log = (...a) => console.log(`[${step}]`, ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
