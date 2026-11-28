@@ -1,9 +1,11 @@
 // Platform adapter.
 // The same renderer bundle runs in two places:
 //   - Electron desktop pet: `window.live3d` bridge is injected by main/preload.js
-//   - Plain browser (mobile web page, future roaming feature): no bridge,
-//     every desktop-only capability degrades gracefully.
+//   - Plain browser (mobile web page on the LAN host): no bridge; listings come
+//     from the HTTP API and live sync rides the roaming WebSocket.
 const bridge = typeof window !== 'undefined' ? window.live3d : undefined;
+
+import { RoamingClient, ROAMING_EVENTS } from './sync/roaming.js';
 
 // LAN web mode (phone browser): listings come from the desktop host's HTTP API
 // (main/lan.js). In a plain local page (file:// or offline) fetch fails and we
@@ -17,6 +19,31 @@ async function webList(endpoint) {
   } catch {
     return [];
   }
+}
+
+// Lazy WebSocket link to the desktop host (web mode only). Created when the
+// first subscriber registers; multiplexes 'state'/'play'/'roam' messages onto
+// the on*Changed callbacks below.
+let webSync = null;
+function ensureWebSync() {
+  if (webSync) return webSync;
+  const client = new RoamingClient();
+  const cbs = { model: [], animation: [], facing: [], play: [], roam: [] };
+  client._cbs = cbs;
+  client.on(ROAMING_EVENTS.STATE, (msg) => {
+    if (msg.model) for (const cb of cbs.model) cb(msg.model);
+    if (msg.animation !== undefined) for (const cb of cbs.animation) cb(msg.animation);
+    if (typeof msg.facing === 'number') for (const cb of cbs.facing) cb(msg.facing);
+  });
+  client.on(ROAMING_EVENTS.PLAY, (msg) => {
+    if (msg.entry) for (const cb of cbs.play) cb(msg.entry);
+  });
+  client.on(ROAMING_EVENTS.ROAM, (msg) => {
+    for (const cb of cbs.roam) cb(msg.cmd);
+  });
+  client.connect(); // reconnects on its own; failures are silent no-ops
+  webSync = client;
+  return client;
 }
 
 export const platform = {
@@ -51,9 +78,11 @@ export const platform = {
     if (bridge) bridge.moveWindowBy(dx, dy);
   },
 
-  // Desktop only: the user picked a model from the tray menu.
+  // Desktop: tray/menu picker events. Web: the same events arrive over the
+  // roaming WebSocket (desktop switches model -> every phone follows).
   onModelChanged(cb) {
     if (bridge) bridge.onModelChanged(cb);
+    else ensureWebSync()._cbs.model.push(cb);
   },
 
   // Desktop only: right-click -> native model picker popup at that point.
@@ -76,14 +105,52 @@ export const platform = {
   },
   onAnimationChanged(cb) {
     if (bridge) bridge.onAnimationChanged(cb);
+    else ensureWebSync()._cbs.animation.push(cb);
   },
   onFacingChanged(cb) {
     if (bridge) bridge.onFacingChanged(cb);
+    else ensureWebSync()._cbs.facing.push(cb);
   },
 
-  // Desktop only: one-shot clip from the CLI channel (--play).
+  // Desktop: one-shot clip from the CLI channel (--play). Web: same broadcast.
   onPlayOnce(cb) {
     if (bridge) bridge.onPlayOnce(cb);
+    else ensureWebSync()._cbs.play.push(cb);
+  },
+
+  // Roaming hand-off commands ('exit' = run off screen, 'enter' = run in).
+  onRoam(cb) {
+    if (bridge) bridge.onRoam(cb);
+    else ensureWebSync()._cbs.roam.push(cb);
+  },
+
+  // Desktop renderer finished its exit animation; the main process hides the
+  // window and tells the phones to play their enter animation.
+  roamExited() {
+    if (bridge) bridge.roamExited();
+  },
+
+  // Web (phone) -> desktop: apply a selection made in the phone picker.
+  setModelRemote(name) {
+    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'model', value: name });
+  },
+  setAnimationRemote(name) {
+    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'animation', value: name });
+  },
+  setFacingRemote(deg) {
+    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'facing', value: deg });
+  },
+
+  // Either side: hand the pet to the other device ('phone' | 'desktop').
+  roamTo(target) {
+    if (bridge) return false;
+    ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'roam', value: target });
+    return true;
+  },
+
+  // Desktop renderer: wheel-turn facing should sync to phones.
+  reportFacing(deg) {
+    if (bridge) bridge.reportFacing(deg);
   },
 
   // Renderer startup finished; lets the main process flush queued CLI commands.

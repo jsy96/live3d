@@ -116,6 +116,159 @@ body.grabbing {
   pointer-events: none;
 }
 
+/* --- phone console (web mode only; nodes are created by src/web-picker.js) */
+
+.web-fab {
+  position: fixed;
+  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(43, 58, 85, 0.82);
+  color: #fff;
+  font-size: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  z-index: 30;
+}
+
+.web-recall {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(43, 58, 85, 0.9);
+  color: #e8ecf4;
+  font-size: 13px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  z-index: 30;
+}
+
+.web-sheet {
+  position: fixed;
+  top: 10px;
+  bottom: 10px;
+  right: 10px;
+  width: min(300px, 80vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(22, 28, 44, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #e8ecf4;
+  font-size: 13px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 40;
+}
+
+.web-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.web-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.web-close {
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e8ecf4;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.web-sec-h {
+  margin: 10px 2px 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fb0cc;
+}
+
+.web-rowbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.web-btn {
+  flex: 1 1 auto;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8ecf4;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.web-chip {
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8ecf4;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.web-filter {
+  margin: 4px 0 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8ecf4;
+  font-size: 13px;
+}
+
+.web-group-h {
+  margin: 6px 2px 2px;
+  font-size: 11px;
+  color: #9fb0cc;
+}
+
+.web-row {
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.web-row.cur {
+  background: rgba(91, 155, 213, 0.25);
+  outline: 1px solid rgba(91, 155, 213, 0.7);
+}
+
+.web-chip.cur {
+  background: rgba(91, 155, 213, 0.35);
+  border-color: rgba(91, 155, 213, 0.8);
+}
+
+.web-sheet .filtered-out {
+  display: none;
+}
+
 .hidden {
   /* !important: ID selectors (#panel) outrank this class otherwise. */
   display: none !important;

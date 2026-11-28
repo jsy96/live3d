@@ -29,7 +29,16 @@ export function createViewer(canvas) {
   const lookTarget = new THREE.Object3D();
   scene.add(lookTarget);
 
+  // Intermediate group the model lives in. The animator owns vrm.scene.position
+  // (hips-height .y, browser drag offset .x/.y), so the roaming hand-off
+  // animation (pet runs off / in through the screen edge) drives THIS group
+  // instead — the two mechanisms never fight over the same transform.
+  const petRoot = new THREE.Group();
+  scene.add(petRoot);
+
   let current = null;
+  // Roaming run animation state: { from, to, t, dur, onDone } on petRoot.x.
+  let roam = null;
   // Facing (turntable) state in degrees: 0 = front, ±45 = three-quarter,
   // ±90 = side, 180 = back. Damped so the turn never snaps.
   const facing = { current: 0, target: 0 };
@@ -54,11 +63,50 @@ export function createViewer(canvas) {
     camera,
     canvas,
     lookTarget,
+    petRoot,
     get vrm() {
       return current;
     },
     set vrm(v) {
       current = v;
+    },
+    get petVisible() {
+      return petRoot.visible;
+    },
+    setPetVisible(v) {
+      petRoot.visible = v;
+    },
+    /** Horizontal world distance that clears the camera view (plus margin) —
+     *  how far the pet must travel to be fully off-screen. */
+    runSpan() {
+      const vfov = (camera.fov * Math.PI) / 180;
+      const hfov = 2 * Math.atan(Math.tan(vfov / 2) * Math.max(camera.aspect, 0.2));
+      return Math.tan(hfov / 2) * camera.position.length() + 0.6;
+    },
+    /** 'exit': run off the LEFT edge (ease-in, accelerating away).
+     *  'enter': run in FROM the right edge (ease-out, arriving softly). */
+    startRoam(kind, onDone) {
+      const span = this.runSpan();
+      roam =
+        kind === 'exit'
+          ? { from: 0, to: -span, t: 0, dur: 0.9, onDone }
+          : { from: span, to: 0, t: 0, dur: 0.9, onDone };
+      petRoot.position.x = roam.from;
+    },
+    updateRoam(dt) {
+      if (!roam) return;
+      roam.t += dt;
+      const k = Math.min(roam.t / roam.dur, 1);
+      const e = roam.to === 0 ? 1 - Math.pow(1 - k, 3) : k * k;
+      petRoot.position.x = roam.from + (roam.to - roam.from) * e;
+      // Lean into the (always leftward) run, straightening out at both ends.
+      petRoot.rotation.z = -0.12 * Math.sin(Math.PI * k);
+      if (k >= 1) {
+        const done = roam.onDone;
+        roam = null;
+        petRoot.rotation.z = 0;
+        done?.();
+      }
     },
     get facingTarget() {
       return facing.target;
@@ -163,11 +211,11 @@ export async function loadVRM(viewer, url) {
   viewer.setBaseYaw(vrm.scene.rotation.y);
 
   if (viewer.vrm) {
-    viewer.scene.remove(viewer.vrm.scene);
+    viewer.petRoot.remove(viewer.vrm.scene);
     VRMUtils.deepDispose(viewer.vrm.scene);
   }
   viewer.vrm = vrm;
-  viewer.scene.add(vrm.scene);
+  viewer.petRoot.add(vrm.scene);
   // Relax the arms before framing: the camera fit must see the pose the pet
   // will actually stand in, not the T-pose.
   applyAPose(vrm);

@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('live3d', {
   onPlayOnce: (cb) => {
     ipcRenderer.on('animations:playOnce', (_event, entry) => cb(entry));
   },
+  // Roaming hand-off ('exit' | 'enter'); after an exit finishes, the renderer
+  // reports back so the main process can hide the window and notify phones.
+  onRoam: (cb) => {
+    ipcRenderer.on('roam:event', (_event, kind) => cb(kind));
+  },
+  roamExited: () => ipcRenderer.send('roam:exited'),
+  // Wheel-turn facing, reported so the main process can sync it to phones.
+  reportFacing: (deg) => ipcRenderer.send('facing:report', deg),
   // Renderer startup finished; the main process flushes queued CLI commands.
   ready: () => ipcRenderer.send('app:ready'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('win:moveBy', dx, dy),

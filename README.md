@@ -1,11 +1,18 @@
 # AI Live3D 桌宠
 
-AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码桌面与手机浏览器共用——桌面端起局域网服务，手机扫码即让桌宠「跑进」手机屏幕（触摸手势全兼容）。
+AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码桌面与手机浏览器共用——桌面端起局域网服务，手机扫码即让桌宠「跑进」手机屏幕（触摸手势全兼容），WebSocket 双向同步支持手机端换模型/换动作，还能一键把桌宠在电脑和手机之间「赶来赶去」。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261127-6**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 当前版本：**v1.0.261128-1**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
+
+- **v1.0.261128-1**（2026-11-28）
+  - **WebSocket 实时同步（四期第二片）**：LAN 服务新增 `/ws` 端点（`ws` 包，零传递依赖）——桌面端换模型/换待机动画/转身/`--play` 单次动作**实时广播到所有连接的手机**；滚轮转向经 `facing:report` 上行同步。协议见 `src/sync/roaming.js` 头注（`state`/`play`/`pick`/`roam` 四类消息，字段缺省=不变）
+  - **手机端控制台**：网页右下角 ☰ 悬浮按钮打开「桌宠控制台」（`src/web-picker.js`）——漫游按钮 / 朝向五档 / 模型列表 / 126 个待机动画分组+实时筛选，**选择经 WS 上行到桌面应用后广播回传**，所有设备收敛到同一选择（勾选高亮跟随）；模型按 basename 去重防止回声重载
+  - **真·漫游交接（PET_TRANSFER）**：托盘 `Send pet to phone` / 手机「留在这里」/「送到电脑」/ CLI `--show` 召回——源设备播**跑出动画**（0.9s ease-in 加速跑出左缘 + 前倾），目标设备播**跑入动画**（右缘 ease-out 跑入），桌面窗口随之隐藏/恢复。实现于 `viewer.petRoot` 中间层（animator 每帧写 `scene.position`，漫游位移独立走 `petRoot.position.x` 互不打架）；桌面跑完经 `roam:exited` IPC 回报（2.5s 超时兜底）；**最后一只手机断开时桌宠自动跑回电脑**；手机端收起时顶部出现「点此召回」胶囊条
+  - 实测（CDP 驱动真 Edge 窗口当手机）：初始 state 推送→页面自动跟随桌面切到 AvatarSample_B；控制台点 Seed-san→桌面换模→广播回传→勾选移动；「留在这里」→桌面窗口隐藏+手机渲染桌宠；`--show` →手机收起+召回条出现+电脑恢复；WS 协议回归脚本 `scripts/test-lan-sync.mjs` 三步全过（含断线自动回家）；无头 Edge 的 virtual-time 与持续 rAF 互斥导致页面假死是**测试工具伪影**，真窗口全链路正常（此坑已在脚本注释记录）
+  - 新增开发工具：`scripts/test-lan-sync.mjs`（假手机 WS 协议测试）、`scripts/cdp-eval.mjs`（往真页面注入 JS）、`scripts/shot-window.ps1`（按标题+进程名截窗口）
 
 - **v1.0.261127-6**（2026-11-27）
   - **手机网页端（四期第一片）：桌宠跑进手机屏幕**——主进程内置局域网 HTTP 服务（`main/lan.js`，纯 `node:http` 零新框架依赖），把桌面端**同一份** `dist/bundle.js` 渲染层原样供给手机浏览器：`http://<电脑IP>:31790` 打开即见同款桌宠（默认模型自动加载 + 待机/反应动画全量可用），触摸交互原生兼容 Pointer Events（摸头滑动 / 拖动模型 / 戳 / 双击欢呼），网页模式自动切深色渐变背景（桌面透明窗口不受影响）
@@ -127,14 +134,15 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 一期 | VRMA 待机动画（VRM Animation 标准格式，互斥混合） | ✅ 已实现 |
 | 二期 | 摄像头手势识别（MediaPipe Hands：挥手/比心/隔空摸头） | 预留接口 |
 | 三期 | AI 对话（LLM 回复 + 情绪驱动表情 + 口型同步） | 预留接口 |
-| 四期 | 手机网页端（局域网扫码，同一 renderer bundle，触摸交互） | ✅ 第一片已实现 |
-| 四期 | 设备间宠物状态迁移（WebSocket + 跑出/跑进动画） | 预留接口 |
+| 四期 | 手机网页端（局域网扫码，同一 renderer bundle，触摸交互） | ✅ 已实现 |
+| 四期 | 双向同步 + 手机端控制台（换模型/换动画/朝向，WS 实时跟随） | ✅ 已实现 |
+| 四期 | 漫游交接（跑出/跑入动画，断线自动回家，`--show` 召回） | ✅ 已实现 |
 
 ## 技术栈
 
 - **壳**：Electron 33（透明无边框置顶窗口、托盘、单实例锁、点击穿透 `setIgnoreMouseEvents`）
 - **渲染**：Three.js + `@pixiv/three-vrm` v3（VRM 表情/口型/视线/弹簧骨骼），桌面与手机浏览器共用同一 bundle
-- **手机端**：主进程局域网 HTTP 服务（`node:http`）+ `qrcode`（扫码窗口 SVG）
+- **手机端**：主进程局域网 HTTP + WebSocket 服务（`node:http` + `ws`）+ `qrcode`（扫码窗口 SVG）
 - **打包**：esbuild（renderer 打成单文件 `dist/bundle.js`，避开 `file://` ESM 限制）
 - **模型**：VRM 1.0/0.x（示例模型来自 pixiv/three-vrm 官方仓库；推荐用 [VRoid Studio](https://vroid.com/studio) 自己捏）
 - **图标**：`scripts/gen_icon.py`（uv + pillow 生成）
@@ -144,8 +152,8 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 ```
 ai-live3d/
 ├── main/                    # Electron 主进程
-│   ├── main.js              # 窗口/托盘/IPC/自定义协议 live3d-model://
-│   ├── lan.js               # 局域网 HTTP 服务 + 手机扫码 QR 窗口（四期）
+│   ├── main.js              # 窗口/托盘/IPC/自定义协议 live3d-model:///漫游编排
+│   ├── lan.js               # 局域网 HTTP+WS 服务 + 手机扫码 QR 窗口（四期）
 │   ├── preload.js           # contextBridge 暴露 window.live3d
 │   ├── tray.js              # 托盘菜单（换模型/显示隐藏/退出）
 │   └── version.js           # APP_VERSION 唯一来源
@@ -153,7 +161,8 @@ ai-live3d/
 │   ├── app.js               # 入口：加载模型 → 交互 → 帧循环
 │   ├── index.html           # UI（无模型时的设置面板、对话气泡位、debug 角标）
 │   ├── styles.css
-│   ├── platform.js          # 平台适配层：Electron 桥 vs 浏览器降级
+│   ├── platform.js          # 平台适配层：Electron 桥 vs 浏览器降级（WS 同步）
+│   ├── web-picker.js        # 手机端控制台（漫游/朝向/模型/动画选择，web only）
 │   ├── core/
 │   │   ├── viewer.js        # Three.js 场景/相机自动取景/VRM 加载
 │   │   ├── animator.js      # 动画状态机（idle/petting/grabbed/poked/happy）
@@ -211,7 +220,7 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 ./start-pet.bat --facing 90         # 转身（0/45/90/135/180）
 ./start-pet.bat --lan off           # 关局域网服务（on 开 / toggle 切换）
 ./start-pet.bat --qr                # 弹出手机扫码窗口（服务未开会自动启动）
-./start-pet.bat --hide              # 隐藏（--show 显示，--quit 退出）
+./start-pet.bat --hide              # 隐藏（--show 显示/从手机召回桌宠，--quit 退出）
 ```
 
 名称匹配：去扩展名忽略大小写，先精确后子串；`--play` 支持 `poke/surprise`、`hello/happy` 等别名；多命令可组合（`--play hello --facing 90`）。命令回执（含原始 argv）与匹配失败都写入 `ai-live3d.log` 的 `[cmd]` 行。配套 **Claude Code skill** `.claude/skills/live3d-pet/SKILL.md`：装了 Claude Code 的会话里直接说「让桌宠跳个舞」即可遥控。
@@ -223,12 +232,14 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 1. 托盘图标右键 → **Show QR code**（或 `start-pet.bat --qr`），弹出扫码窗口
 2. 手机扫码（或浏览器直接输入 `http://<电脑IP>:31790`，窗口里列了全部候选地址）
 3. 手机上出现同款桌宠：自动加载默认模型与待机/反应动画，**摸头滑动 / 拖动 / 戳 / 双击欢呼**全部触摸手势可用；建议浏览器菜单里「添加到主屏幕」获得类 App 全屏体验
+4. 手机右下角 **☰ 悬浮按钮**打开「桌宠控制台」：换模型 / 换待机动画（126 个可筛选）/ 转身朝向，选择实时同步到电脑和其它已连接手机；电脑端的切换（托盘/右键菜单/CLI）也会实时推到手机
+5. **漫游**：控制台里「留在这里 📱」或托盘 `Send pet to phone`——桌宠跑出电脑屏幕边缘、从手机右缘跑进来（电脑窗口隐藏）；「送到电脑 🖥」或 CLI `--show` 召回；桌宠在电脑上时手机顶部有「点此召回」胶囊条；**手机网页全部关闭时桌宠自动跑回电脑**，不会走丢
 
 注意：
 
-- 首次开启 Windows 防火墙会弹一次「允许访问」，需勾选**专用网络**放行（局域网只读服务，无上传接口；只暴露 `models/`、`animations/` 白名单文件）
+- 首次开启 Windows 防火墙会弹一次「允许访问」，需勾选**专用网络**放行（局域网服务只暴露 `models/`、`animations/` 白名单文件，WS 仅 JSON 消息）
 - 深色渐变背景只在网页模式生效，桌面透明窗口不受影响
-- 手机端目前跟随电脑的默认模型/动画（页面内切换是四期下一片）；电脑与手机是两份独立渲染，互不影响
+- 经「打开文件...」加载的 `models/` 目录外模型不会同步到手机（手机无法访问该文件），动画同理
 - 服务开关：托盘 `LAN server (phone access)` 或 CLI `--lan <on|off|toggle>`
 
 ### 打包发给别人（便携 zip）
@@ -237,7 +248,7 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello        # 单次播放�
 scripts/make-portable.bat    # 产出 dist/ai-live3d-portable-<版本>.zip（约 174MB）
 ```
 
-对方**无需安装 Node.js**：解压后双击 `start-pet.bat` 即用（运行时只带 electron 二进制 + `qrcode`/`dijkstrajs`/`pngjs` 三个纯 JS 包供扫码窗口用，renderer 已是预构建单文件 bundle），CLI 遥控命令与手机扫码功能同样可用。注意：公开分发前请确认 `models/`、`animations/` 内第三方素材的再分发许可。
+对方**无需安装 Node.js**：解压后双击 `start-pet.bat` 即用（运行时只带 electron 二进制 + `qrcode`/`dijkstrajs`/`pngjs`/`ws` 四个纯 JS 包供扫码窗口与 WS 同步用，renderer 已是预构建单文件 bundle），CLI 遥控命令与手机扫码/同步/漫游功能同样可用。注意：公开分发前请确认 `models/`、`animations/` 内第三方素材的再分发许可。
 
 ## 开发
 
@@ -249,5 +260,5 @@ scripts/make-portable.bat    # 产出 dist/ai-live3d-portable-<版本>.zip（约
 
 1. **二期**：MediaPipe Hands 摄像头手势（`src/hand-tracking.js` 已定 GESTURE 契约：挥手→开心、隔空摸头→petting、比心→开心+气泡、指点→视线跟随）
 2. **三期**：AI 对话（`src/ai/chat-provider.js` 已定契约：`send(text) → { reply, emotion }`，情绪映射到 VRM 表情，`speak()` 驱动口型；API Key 走环境变量）
-3. **四期·已完成第一片**：手机网页端——局域网 HTTP 服务 + 扫码（`main/lan.js`），手机浏览器跑同一 renderer bundle，触摸手势全兼容
-4. **四期·下一片**：真「漫游」——`src/sync/roaming.js` 已定协议（WebSocket `PET_TRANSFER` 事件做宠物状态迁移 + 跑出/跑进动画）、手机端页面内换模型/换动画选择器
+3. **四期**：✅ 手机网页端 + WS 双向同步 + 漫游交接均已完成（HTTP/WS 服务 `main/lan.js`，手机控制台 `src/web-picker.js`，漫游客户端 `src/sync/roaming.js`，跑出/跑入动画 `viewer.petRoot`）
+4. **四期·可选增强**：多手机同时在线时的目标选择（当前广播到全部）、漫游时携带 mood/位置等更丰富的宠物状态

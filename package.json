@@ -16,7 +16,8 @@
     "@pixiv/three-vrm": "^3.0.0",
     "@pixiv/three-vrm-animation": "^3.6.0",
     "qrcode": "^1.5.4",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "ws": "^8.23.1"
   },
   "allowScripts": {
     "electron@33.4.11": true

@@ -34,7 +34,8 @@ cd /d/cc/codex/ai-live3d && ./start-pet.bat --play hello
 | `--facing <角度>` | 转身：0 正面 / 45 / 90 侧面 / 135 / 180 背面 |
 | `--lan <on\|off\|toggle>` | 局域网手机访问服务开关（默认随桌宠自动开启，端口 31790） |
 | `--qr` | 弹出手机扫码窗口（服务未开时自动启动） |
-| `--hide` / `--show` | 隐藏 / 显示窗口 |
+| `--hide` / `--show` | 隐藏 / 显示窗口；桌宠漫游在手机上时 `--show` = **召回电脑**（跑入动画） |
+| （手机端） | 手机网页 ☰ 控制台可换模型/动画/朝向（实时同步回电脑）、「留在这里」把桌宠接到手机、「送到电脑」送回；手机页面全关时桌宠自动回电脑 |
 | `--devtools` | 切换 DevTools |
 | `--quit` | 退出桌宠 |
 
@@ -62,6 +63,7 @@ tail -n 15 /d/cc/codex/ai-live3d/ai-live3d.log
 - 命令已收到：`[cmd] second-instance: {...}`（或 `launch`）
 - 播放成功：`[ai-live3d] play-once: <路径>`；换动画成功：`animation loaded`；换模型成功：`model loaded`
 - 局域网服务：`[lan] listening on 0.0.0.0:31790` + `[lan] phone url: http://<ip>:31790`（手机浏览器/扫码入口）；`[lan] qr window shown` = 扫码窗口已弹出
+- 手机连接/同步：`[lan] phone connected from <ip>`、`[lan] hello: <UA>`；漫游：`[roam] pet handed off to phone` / `[roam] pet back on the desktop` / `[roam] all phones disconnected; pet returns to the desktop`
 - 名称没匹配上：`[cmd] play: animation not found: <名称>` → 用 `ls` 查准确文件名重试
 - 桌宠不可见：多半是模型出画或渲染错误，翻日志找 `[error]` / `render-process-gone`
 - `--quit` 之后再用 `--play` 会重新完整启动（等模型加载完才播，属正常）

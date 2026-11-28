@@ -14,6 +14,12 @@
 //   /models/<file>      -> model files (basename only, extension whitelisted)
 //   /animations/<file>  -> animation clips (same guard)
 // Plus a small QR-code window (tray / --qr) so the phone can scan the URL.
+// A WebSocket endpoint at /ws (package 'ws') carries live sync both ways:
+// phones receive state/play/roam pushes and send picker selections upstream.
+// hooks (all optional):
+//   buildState() -> full {model,animation,facing} sent to each new client
+//   onPick(what, value) -> phone-side selection (model|animation|facing|roam)
+//   onClientsChanged() -> connection count changed (tray refresh, auto-return)
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -108,10 +114,11 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-function createLanServer(log) {
+function createLanServer(log, hooks = {}) {
   let server = null;
   let port = null;
   let preferredIp = null; // NIC the routing table would use (see routePreferredIp)
+  let wss = null; // WebSocket server for live sync (see /ws route)
   const sockets = new Set();
   // The QR window is reused across calls while it stays open.
   let qrWin = null;
@@ -203,6 +210,64 @@ function createLanServer(log) {
       return;
     }
     serveFile(res, path.join(dir, name), head);
+  }
+
+  // --- WebSocket live sync (phones) -----------------------------------------
+  function attachWs(s) {
+    let WebSocketServer;
+    try {
+      ({ WebSocketServer } = require('ws'));
+    } catch {
+      log('[lan] ws package unavailable; live sync disabled (HTTP still fine)');
+      return;
+    }
+    wss = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+    s.on('upgrade', (req, socket, head) => {
+      let u;
+      try {
+        u = new URL(req.url, 'http://lan.local');
+      } catch {
+        socket.destroy();
+        return;
+      }
+      if (u.pathname !== '/ws') {
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    });
+    wss.on('connection', (ws, req) => {
+      log(`[lan] phone connected from ${req.socket.remoteAddress ?? '?'}`);
+      const hello = hooks.buildState?.();
+      if (hello) ws.send(JSON.stringify({ type: 'state', ...hello }));
+      hooks.onClientsChanged?.();
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) return;
+        let msg;
+        try {
+          msg = JSON.parse(data.toString());
+        } catch {
+          return;
+        }
+        if (msg.type === 'hello') {
+          log(`[lan] hello: ${String(msg.ua ?? '').slice(0, 90)}`);
+        } else if (msg.type === 'pick') {
+          hooks.onPick?.(msg.what, msg.value);
+        }
+      });
+      ws.on('close', () => hooks.onClientsChanged?.());
+      ws.on('error', () => {
+        /* per-socket errors must not take the server down */
+      });
+    });
+  }
+
+  function broadcast(obj) {
+    if (!wss) return;
+    const s = JSON.stringify(obj);
+    for (const c of wss.clients) {
+      if (c.readyState === 1) c.send(s);
+    }
   }
 
   function onRequest(req, res) {
@@ -378,6 +443,7 @@ ${others.length > 0 ? `<div class="alt">Other adapters:<br>${others.map((u) => e
             // Figure out which adapter a phone should use before announcing.
             routePreferredIp().then((ip) => {
               preferredIp = ip;
+              attachWs(s);
               log(`[lan] listening on 0.0.0.0:${candidate} (${APP_VERSION})`);
               if (ip) log(`[lan] route-preferred adapter: ${ip}`);
               for (const u of orderedIps().map(urlOf)) log(`[lan] phone url: ${u}`);
@@ -395,10 +461,28 @@ ${others.length > 0 ? `<div class="alt">Other adapters:<br>${others.map((u) => e
       const s = server;
       server = null;
       port = null;
+      if (wss) {
+        for (const c of wss.clients) c.terminate();
+        wss.close();
+        wss = null;
+      }
       for (const sock of sockets) sock.destroy();
       sockets.clear();
       s.close();
       log('[lan] server stopped');
+    },
+
+    clientsCount() {
+      return wss ? wss.clients.size : 0;
+    },
+    broadcastState(fields) {
+      broadcast({ type: 'state', ...fields });
+    },
+    broadcastPlay(entry) {
+      broadcast({ type: 'play', entry });
+    },
+    broadcastRoam(cmd) {
+      broadcast({ type: 'roam', cmd });
     },
 
     showQr,

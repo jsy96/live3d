@@ -48,8 +48,9 @@ copy /y README.md "%STAGE%\" >nul || exit /b 1
 rem --- runtime: ONLY electron binaries, no Node.js needed on the target PC
 xcopy /e /i /q node_modules\electron\dist "%STAGE%\node_modules\electron\dist" >nul || exit /b 1
 
-rem --- LAN phone-access QR window deps (qrcode runtime graph; yargs is CLI-only)
-for %%p in (qrcode dijkstrajs pngjs) do (
+rem --- LAN phone-access runtime deps (qrcode graph for the QR window; ws for
+rem --- the live-sync WebSocket; yargs is qrcode's CLI-only dep and not needed)
+for %%p in (qrcode dijkstrajs pngjs ws) do (
   if exist "node_modules\%%p" xcopy /e /i /q "node_modules\%%p" "%STAGE%\node_modules\%%p" >nul || exit /b 1
 )
 

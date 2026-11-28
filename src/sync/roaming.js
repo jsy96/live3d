@@ -1,45 +1,113 @@
-// Phase 4 interface: the pet roams between devices (PC <-> phone) over LAN.
+// Phase 4: the pet roams between the desktop and phone web clients.
+// Transport = WebSocket at /ws on the LAN HTTP server (main/lan.js hosts it;
+// that side speaks the same event vocabulary). This module is the
+// phone-browser side plus the shared event names.
 //
-// Planned architecture:
-//   - The desktop Electron app starts a small HTTP + WebSocket service (main
-//     process, Phase 4) serving this same renderer bundle plus the .vrm model.
-//   - The phone opens `http://<pc-ip>:<port>` (QR code shown from the tray menu)
-//     and the pet renders in the browser with the same Pointer-Events code —
-//     src/interaction/mouse.js already works for touch.
-//   - "Roaming" = a hand-off of pet state over WebSocket: the old device plays
-//     an exit animation (pet runs off the screen edge), the new device plays an
-//     enter animation (runs in from the opposite edge).
-//   - Pet state: { modelId, mood, position, currentState, lastDevice }.
+// Message shapes (JSON text frames):
+//   phone -> PC : { type: 'hello', ua }
+//                 { type: 'pick', what: 'model'|'animation'|'facing'|'roam',
+//                                value: <basename | null | degrees | 'phone'|'desktop'> }
+//   PC -> phone : { type: 'state', model?: {path,url}, animation?: {path,url}|null,
+//                          facing?: degrees }   (omitted field = unchanged)
+//                 { type: 'play', entry: {path,url} }
+//                 { type: 'roam', cmd: 'enter' | 'exit' }
+// 'roam exit' tells the client to play the run-off animation and stow the pet;
+// 'roam enter' brings it back with a run-in animation.
 
 export const ROAMING_EVENTS = Object.freeze({
-  HELLO: 'hello', // device announcing itself on the LAN
-  PET_TRANSFER: 'pet:transfer', // full pet state hand-off
-  PET_STATE: 'pet:state', // periodic mood/position sync while roaming
-  PET_EXIT: 'pet:exit', // play exit animation on the source device
-  PET_ENTER: 'pet:enter', // play enter animation on the target device
+  HELLO: 'hello', // phone announcing itself to the desktop host
+  STATE: 'state', // model / animation / facing sync (partial updates)
+  PLAY: 'play', // one-shot clip broadcast (--play / poke reactions)
+  PICK: 'pick', // phone-side selection flowing back to the PC
+  ROAM: 'roam', // hand-off animation commands
 });
 
-export class RoamingHost {
-  /** Start the LAN server (Electron main process). Phase 4. */
-  async start() {
-    throw new Error('RoamingHost: 局域网服务与扫码配对在第四期实现');
-  }
-
-  stop() {}
-
-  /** URL the phone should open, null when not running. */
-  get lanUrl() {
-    return null;
-  }
-}
+const RECONNECT_MS = 2000;
 
 export class RoamingClient {
-  /** Connect to a desktop host from a phone browser. Phase 4. */
-  async connect(_url) {
-    throw new Error('RoamingClient: 手机网页端接入在第四期实现');
+  constructor() {
+    this.ws = null;
+    this.url = null;
+    this.handlers = new Map(); // event type -> cb[]
+    this.closedByUs = false;
+    this._retryTimer = null;
   }
 
-  send(_event, _payload) {}
+  /** Connect to the LAN host; resolves true once the socket is open. Keeps
+   *  retrying in the background (PC restarted / Wi-Fi blip) until close(). */
+  connect(url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`) {
+    this.url = url;
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => {
+        if (!settled) {
+          settled = true;
+          resolve(ok);
+        }
+      };
+      let ws;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        done(false);
+        this._reconnectLater();
+        return;
+      }
+      this.ws = ws;
+      ws.onopen = () => {
+        this.send(ROAMING_EVENTS.HELLO, { ua: navigator.userAgent });
+        done(true);
+      };
+      ws.onerror = () => done(false);
+      ws.onclose = () => {
+        done(false);
+        this._reconnectLater();
+      };
+      ws.onmessage = (ev) => this._dispatch(ev.data);
+    });
+  }
 
-  close() {}
+  _reconnectLater() {
+    if (this.closedByUs || !this.url) return;
+    clearTimeout(this._retryTimer);
+    this._retryTimer = setTimeout(() => {
+      if (!this.closedByUs) this.connect(this.url);
+    }, RECONNECT_MS);
+  }
+
+  _dispatch(raw) {
+    let msg;
+    try {
+      msg = JSON.parse(String(raw));
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg.type !== 'string') return;
+    for (const cb of this.handlers.get(msg.type) ?? []) {
+      try {
+        cb(msg);
+      } catch (err) {
+        console.error(`[ai-live3d] roaming handler ${msg.type}: ${err?.message ?? err}`);
+      }
+    }
+  }
+
+  on(type, cb) {
+    const list = this.handlers.get(type) ?? [];
+    list.push(cb);
+    this.handlers.set(type, list);
+  }
+
+  send(type, payload = {}) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type, ...payload }));
+    }
+  }
+
+  close() {
+    this.closedByUs = true;
+    clearTimeout(this._retryTimer);
+    this.ws?.close();
+    this.ws = null;
+  }
 }

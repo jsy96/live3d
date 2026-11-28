@@ -88,21 +88,85 @@ async function setLan(on) {
   return ok;
 }
 
+// --- roaming hand-off (PC <-> phone) ----------------------------------------
+// 'desktop' = the pet lives in the desktop window; 'phone' = the window is
+// hidden and the pet runs on the connected phone pages. A hand-off plays a
+// run-off animation on the source device before the target runs it in.
+let petLocation = 'desktop';
+let roamExitTimer = null;
+
+function finishGoPhone() {
+  clearTimeout(roamExitTimer);
+  roamExitTimer = null;
+  win?.hide();
+  lan?.broadcastRoam('enter');
+  appendLog('[roam] pet handed off to phone');
+}
+
+/** Send the pet to the connected phones (run-off, hide window, phones run-in). */
+function goPhone() {
+  if (!lan?.running || lan.clientsCount() === 0) {
+    appendLog('[roam] no phone connected; pet stays on the desktop');
+    return;
+  }
+  petLocation = 'phone';
+  if (win?.isVisible()) {
+    win.webContents.send('roam:event', 'exit');
+    // Safety net: finish the hand-off even if the renderer never reports back.
+    clearTimeout(roamExitTimer);
+    roamExitTimer = setTimeout(finishGoPhone, 2500);
+  } else {
+    finishGoPhone();
+  }
+}
+
+/** Bring the pet back (phones play run-off, window shows + runs in). */
+function goDesktop() {
+  petLocation = 'desktop';
+  clearTimeout(roamExitTimer);
+  roamExitTimer = null;
+  lan?.broadcastRoam('exit');
+  if (win && !win.isVisible()) win.show();
+  win?.webContents.send('roam:event', 'enter');
+  appendLog('[roam] pet back on the desktop');
+}
+
+/** Entry shape the phone can consume: { path: basename, url: '/models/<f>' }.
+ *  Returns undefined for files outside the shared dirs (picked via
+ *  "Open file..." from elsewhere) — those simply don't sync to phones. */
+function phoneEntry(absPath, dir, prefix) {
+  try {
+    if (path.dirname(path.resolve(absPath)) !== path.resolve(dir)) return undefined;
+  } catch {
+    return undefined;
+  }
+  const base = path.basename(absPath);
+  return { path: base, url: `${prefix}${encodeURIComponent(base)}` };
+}
+
 /** Switch the active model and remember it (right-click menu shows a checkmark). */
 function setModel(entry) {
   currentModelPath = entry.path;
   if (win) win.webContents.send('models:changed', entry);
+  const p = phoneEntry(entry.path, MODELS_DIR, '/models/');
+  if (p) lan?.broadcastState({ model: p });
 }
 
 /** Switch the active idle animation (null = hand-written idle pose). */
 function setAnimation(entry) {
   currentAnimationPath = entry ? entry.path : null;
   if (win) win.webContents.send('animations:changed', entry ?? null);
+  const p = entry ? phoneEntry(entry.path, ANIM_DIR, '/animations/') : null;
+  if (p !== undefined) lan?.broadcastState({ animation: p }); // null = "(None)"
 }
 
-/** Command the pet to turn (degrees, 0 = front). */
+let currentFacingDeg = 0;
+
+/** Command the pet to turn (degrees, 0 = front); synced to phones. */
 function setFacing(deg) {
+  currentFacingDeg = deg;
   if (win) win.webContents.send('facing:set', deg);
+  lan?.broadcastState({ facing: deg });
 }
 
 function listAnimations() {
@@ -207,6 +271,21 @@ function registerIpc() {
   // Renderer reports which model it actually loaded (start-up picks models[0]).
   ipcMain.on('models:current', (_event, modelPath) => {
     currentModelPath = modelPath;
+    // Catch-up push: a phone that connected before the renderer finished
+    // loading still learns which model is active.
+    const p = modelPath ? phoneEntry(modelPath, MODELS_DIR, '/models/') : undefined;
+    if (p) lan?.broadcastState({ model: p });
+  });
+
+  // Roaming: the desktop renderer finished its run-off animation.
+  ipcMain.on('roam:exited', () => finishGoPhone());
+
+  // Wheel-turned facing from the renderer; store + relay to phones.
+  ipcMain.on('facing:report', (_event, deg) => {
+    if (Number.isFinite(deg)) {
+      currentFacingDeg = deg;
+      lan?.broadcastState({ facing: deg });
+    }
   });
 
   // Right-click on the pet / panel -> native model picker menu at that point.
@@ -291,6 +370,7 @@ function registerIpc() {
 //   --facing <deg>             turn the pet (0 = front, 180 = back)
 //   --lan <on|off|toggle>      LAN phone-access web server
 //   --qr                       show the QR window for phones to scan
+//   --show                     show the pet (recalls it from a phone)
 const PLAY_ALIASES = {
   poke: 'surprise',
   poked: 'surprise',
@@ -334,6 +414,7 @@ function parseCliArgs(argv) {
     facing: null,
     lan: null,
     qr: false,
+    show: false,
     hide: false,
     devtools: false,
     quit: false,
@@ -342,6 +423,7 @@ function parseCliArgs(argv) {
   const waiting = []; // value-expecting flags still needing their argument
   const boolFlags = {
     '--hide': 'hide',
+    '--show': 'show',
     '--devtools': 'devtools',
     '--quit': 'quit',
     '--exit': 'quit',
@@ -405,7 +487,8 @@ function dispatchCli(argv, source) {
     else setLan(true).then(() => lan?.showQr());
   }
   // Any invocation shows the pet (legacy double-click-bat behavior); only an
-  // explicit --hide keeps it hidden. Focus only for plain no-command wakes.
+  // explicit --hide keeps it hidden — unless the pet is currently roaming on
+  // a phone, where only --show recalls it. Focus only for plain no-command wakes.
   const hasCmds =
     cmds.model != null ||
     cmds.animation !== undefined ||
@@ -413,12 +496,16 @@ function dispatchCli(argv, source) {
     cmds.facing != null ||
     cmds.lan != null ||
     cmds.qr ||
+    cmds.show ||
     cmds.devtools ||
     cmds.hide;
+  if (cmds.show) goDesktop();
   if (cmds.hide) win?.hide();
-  else {
+  else if (petLocation === 'desktop') {
     win?.show();
     if (!hasCmds) win?.focus();
+  } else if (!hasCmds) {
+    appendLog('[cmd] pet is on the phone; use --show to bring it back');
   }
   // Model/animation/play/facing reach the renderer via IPC; queue them until
   // it has registered its listeners (first launch races renderer startup).
@@ -451,8 +538,13 @@ function sendCliToRenderer(cmds) {
   if (cmds.play != null) {
     const alias = PLAY_ALIASES[String(cmds.play).toLowerCase()];
     const entry = resolveEntry(listAnimations(), alias ?? cmds.play);
-    if (entry) win?.webContents.send('animations:playOnce', entry);
-    else appendLog(`[cmd] play: animation not found: ${cmds.play}`);
+    if (entry) {
+      win?.webContents.send('animations:playOnce', entry);
+      const p = phoneEntry(entry.path, ANIM_DIR, '/animations/');
+      if (p) lan?.broadcastPlay(p);
+    } else {
+      appendLog(`[cmd] play: animation not found: ${cmds.play}`);
+    }
   }
 }
 
@@ -476,7 +568,45 @@ if (!gotLock) {
 
     // Phone access: the LAN web server auto-starts so a phone can connect out
     // of the box (Windows will ask once to allow it through the firewall).
-    lan = createLanServer(appendLog);
+    lan = createLanServer(appendLog, {
+      buildState: () => ({
+        model: currentModelPath
+          ? (phoneEntry(currentModelPath, MODELS_DIR, '/models/') ?? null)
+          : null,
+        animation: currentAnimationPath
+          ? (phoneEntry(currentAnimationPath, ANIM_DIR, '/animations/') ?? null)
+          : null,
+        facing: currentFacingDeg,
+      }),
+      onPick: (what, value) => {
+        if (what === 'model') {
+          const entry = resolveEntry(listModels(), String(value ?? ''));
+          if (entry) setModel(entry);
+          else appendLog(`[lan] pick: model not found: ${value}`);
+        } else if (what === 'animation') {
+          if (value == null || /^(none|null|off|-)$/i.test(String(value))) {
+            setAnimation(null);
+          } else {
+            const entry = resolveEntry(listAnimations(), String(value ?? ''));
+            if (entry) setAnimation(entry);
+            else appendLog(`[lan] pick: animation not found: ${value}`);
+          }
+        } else if (what === 'facing' && Number.isFinite(Number(value))) {
+          setFacing(Number(value));
+        } else if (what === 'roam') {
+          if (value === 'phone') goPhone();
+          else if (value === 'desktop') goDesktop();
+        }
+      },
+      onClientsChanged: () => {
+        trayApi?.refresh();
+        // Pet lives on a phone and the last one just left: come back home.
+        if (petLocation === 'phone' && lan && lan.clientsCount() === 0 && !roamExitTimer) {
+          appendLog('[roam] all phones disconnected; pet returns to the desktop');
+          goDesktop();
+        }
+      },
+    });
     await setLan(true);
 
     // Command-line args of THIS (first) instance, e.g. a cold
@@ -492,9 +622,15 @@ if (!gotLock) {
         if (!result.canceled) setModel(toModelEntry(result.filePaths[0]));
       },
       {
-        lanState: () => ({ running: lan?.running ?? false, url: lan?.lanUrl() }),
+        lanState: () => ({
+          running: lan?.running ?? false,
+          url: lan?.lanUrl(),
+          clients: lan?.clientsCount() ?? 0,
+        }),
         toggleLan: () => setLan(!lan?.running),
         showQr: () => (lan?.running ? lan.showQr() : setLan(true).then(() => lan?.showQr())),
+        goPhone,
+        goDesktop,
       }
     );
   });

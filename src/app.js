@@ -5,6 +5,7 @@ import { Animator } from './core/animator.js';
 import { VRMAPlayer } from './core/vrma.js';
 import { HitTester } from './interaction/hit-test.js';
 import { MouseInteractor } from './interaction/mouse.js';
+import { createWebPicker } from './web-picker.js';
 import { platform } from './platform.js';
 
 // Uncaught errors land in the log with full stacks (console-message hook in
@@ -40,6 +41,11 @@ async function main() {
   let vrmaPlayer = null;
   let currentVrm = null;
   let pendingAnimation; // undefined = not initialized; null = none; entry = waiting for model
+  // Currently-loaded selections (lowercase basenames) — dedupes sync pushes
+  // and drives the phone console's checkmarks.
+  let currentModelName = null;
+  let currentAnimName = null;
+  let webPicker = null; // phone console, web mode only
 
   function showPanel(message) {
     panelError.textContent = message || '';
@@ -56,7 +62,11 @@ async function main() {
       if (interactor) interactor.dispose();
       interactor = new MouseInteractor(viewer, hitTester, animator, {
         onPointerNDC: (x, y) => viewer.setLookFromPointer(x, y),
-        onWheelRotate: (step) => viewer.setFacing(viewer.facingTarget + step),
+        onWheelRotate: (step) => {
+          viewer.setFacing(viewer.facingTarget + step);
+          // Wheel turns sync to the phones (main process relays).
+          platform.reportFacing(viewer.facingTarget);
+        },
       });
       panel.classList.add('hidden');
       if (typeof entry === 'object' && entry.path) {
@@ -64,6 +74,10 @@ async function main() {
       }
       // Re-bind the VRMA clip to the new model if one was already chosen.
       currentVrm = vrm;
+      if (typeof entry === 'object' && entry.path) {
+        currentModelName = entry.path.split(/[\\/]/).pop().toLowerCase();
+        webPicker?.select({ model: currentModelName });
+      }
       vrmaPlayer?.rebind(vrm);
       console.log('[ai-live3d] model loaded');
       if (pendingAnimation !== undefined) {
@@ -135,6 +149,8 @@ async function main() {
       vrmaPlayer?.clear();
       animator?.setVRMA(null);
       platform.reportCurrentAnimation(null);
+      currentAnimName = null;
+      webPicker?.select({ animation: null });
       return;
     }
     if (!currentVrm) {
@@ -149,6 +165,8 @@ async function main() {
       await vrmaPlayer.load(entry.url, currentVrm);
       animator.setVRMA(vrmaPlayer);
       platform.reportCurrentAnimation(entry.path);
+      currentAnimName = entry.path.split(/[\\/]/).pop().toLowerCase();
+      webPicker?.select({ animation: currentAnimName });
       console.log('[ai-live3d] animation loaded');
       // One-shot diagnostics for the hips-height mystery:
       console.log(`[diag] vrm.scene has 'hips' node: ${!!currentVrm.scene.getObjectByName('hips')}`);
@@ -216,11 +234,50 @@ async function main() {
     showPanel('');
   }
 
-  // Model picked from the tray menu arrives via IPC event.
-  platform.onModelChanged((entry) => loadModel(entry));
-  platform.onAnimationChanged((entry) => loadAnimation(entry));
-  platform.onFacingChanged((deg) => viewer.setFacing(deg));
+  // Model picked from the tray menu (desktop) or roaming sync push (phone)
+  // arrives here; same-basename pushes are no-ops.
+  platform.onModelChanged((entry) => {
+    const base = entry?.path ? entry.path.split(/[\\/]/).pop().toLowerCase() : null;
+    if (base && base === currentModelName) return;
+    loadModel(entry);
+  });
+  platform.onAnimationChanged((entry) => {
+    const base = entry?.path ? entry.path.split(/[\\/]/).pop().toLowerCase() : null;
+    if (!entry && currentAnimName == null) return;
+    if (entry && base === currentAnimName) return;
+    loadAnimation(entry);
+  });
+  platform.onFacingChanged((deg) => {
+    viewer.setFacing(deg);
+    webPicker?.select({ facing: deg });
+  });
   platform.onPlayOnce(playOnce);
+
+  // Roaming hand-off: 'exit' runs the pet off screen (desktop then hides the
+  // window, phone stows the model), 'enter' runs it back in.
+  platform.onRoam((cmd) => {
+    if (cmd === 'exit') {
+      viewer.startRoam('exit', () => {
+        if (platform.isDesktop) platform.roamExited();
+        else {
+          viewer.setPetVisible(false);
+          webPicker?.setPetAway(true);
+        }
+      });
+    } else if (cmd === 'enter') {
+      if (!platform.isDesktop && !viewer.petVisible) {
+        viewer.setPetVisible(true);
+        webPicker?.setPetAway(false);
+      }
+      viewer.startRoam('enter');
+    }
+  });
+
+  // Phone console (web only): roam buttons + model/animation/facing picker.
+  if (!platform.isDesktop) {
+    webPicker = createWebPicker({ models, animations: [...animMap.values()] });
+  }
+
   // Startup done: the main process can now deliver queued CLI commands.
   platform.ready();
 
@@ -283,6 +340,7 @@ async function main() {
     last = nowMs;
     try {
       viewer.updateFacing(dt);
+      viewer.updateRoam(dt);
       animator?.update(dt);
     } catch (err) {
       console.error(`[ai-live3d] animator error (${animator?.state ?? '-'}): ${err?.message}`);
