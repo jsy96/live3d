@@ -9,6 +9,7 @@
     "start:fast": "electron ."
   },
   "devDependencies": {
+    "@cloudbase/cli": "^3.9.5",
     "electron": "^33.0.0",
     "esbuild": "^0.24.0"
   },

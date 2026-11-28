@@ -1,56 +1,104 @@
-// PC-side registrar for the TCB pet-hub cloud function.
-// Whenever the tunnel URL or LAN URLs change, POST them to the hub so the
-// CDN-hosted page (static assets on Tencent CloudBase) can find the live PC.
-// Config file: tcb-config.json in the app root, gitignored:
-//   { "hubUrl": "https://<env>.service.tcloudbase.com/pet-hub",
-//     "secret": "<REG_SECRET set on the function>" }
-// Without the config the registrar is a silent no-op (LAN-only mode).
+// PC-side publisher for the Tencent CloudBase CDN copy.
+// Whenever the tunnel URL or LAN URLs change, we publish a tiny live.json to
+// the env's static hosting (same origin as the CDN page) so the page knows
+// where the live PC is — no cloud function, no database, same-origin fetch.
+//
+// Deployment uses the local cloudbase CLI (devDependency, already logged in
+// via `cloudbase login`). Config file: tcb-config.json in the app root,
+// gitignored: { "envId": "<tcb env id>" }
+// Without the config this is a silent no-op (LAN-only mode).
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'tcb-config.json');
 
 function loadConfig() {
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    if (typeof cfg.hubUrl === 'string' && typeof cfg.secret === 'string') return cfg;
+    if (typeof cfg.envId === 'string' && cfg.envId) return cfg;
   } catch {
     /* absent or malformed: LAN-only mode */
   }
   return null;
 }
 
+function cloudbaseBin() {
+  // The bin shim is a plain JS file — invoke it with Electron's bundled Node
+  // directly. (spawn('...cloudbase.cmd') without shell:true fails on Node 20+.)
+  const local = path.join(__dirname, '..', 'node_modules', '@cloudbase', 'cli', 'bin', 'cloudbase');
+  try {
+    fs.accessSync(local);
+    return local;
+  } catch {
+    return null;
+  }
+}
+
 function createTcbRegistrar(log) {
-  let cfg = loadConfig();
-  if (cfg) log(`[tcb] registrar ready (hub: ${cfg.hubUrl})`);
-  else log('[tcb] no tcb-config.json; CDN page will not learn the live address');
-  let timer = null;
+  const cfg = loadConfig();
+  const bin = cloudbaseBin();
+  if (cfg && bin) log(`[tcb] publisher ready (env: ${cfg.envId})`);
+  else log('[tcb] no tcb-config.json or cloudbase CLI; CDN page will not learn the live address');
   let latest = null;
+  let publishing = false;
+  let dirty = false;
 
-  async function push() {
-    if (!cfg || !latest) return;
-    try {
-      const r = await fetch(cfg.hubUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'register', secret: cfg.secret, ...latest }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (j.code !== 0) log(`[tcb] register rejected: ${JSON.stringify(j).slice(0, 120)}`);
-    } catch (err) {
-      log(`[tcb] register failed: ${err?.message ?? err}`);
+  function publish() {
+    if (!cfg || !bin || !latest || publishing) {
+      dirty = true; // retried after the in-flight publish finishes
+      return;
     }
+    publishing = true;
+    const tmp = path.join(os.tmpdir(), `live3d-live-${Date.now()}.json`);
+    fs.writeFileSync(tmp, JSON.stringify(latest));
+    const proc = spawn(
+      'node',
+      [
+        bin,
+        // Must match the BASE in scripts/build-cdn-site.mjs (hosting root
+        // belongs to other apps; the pet lives under /pet/).
+        'hosting',
+        'deploy',
+        tmp,
+        '/pet/live.json',
+        '-e',
+        cfg.envId,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
+    );
+    let err = '';
+    proc.stderr.on('data', (d) => (err += d));
+    proc.on('error', (e) => {
+      log(`[tcb] publish spawn error: ${e.message}`);
+      publishing = false;
+    });
+    proc.on('exit', (code) => {
+      publishing = false;
+      fs.unlink(tmp, () => {});
+      if (code === 0) log('[tcb] live.json published');
+      else {
+        dirty = true;
+        log(`[tcb] publish failed (code ${code}): ${err.slice(0, 120)}`);
+      }
+      if (dirty) {
+        dirty = false;
+        setTimeout(publish, 2000);
+      }
+    });
   }
 
-  /** Register the PC's current addresses (debounced; safe to call often). */
+  /** Publish the PC's current addresses (debounced; safe to call often). */
   function register(fields) {
-    if (!cfg) return;
-    latest = { ...latest, ...fields };
-    clearTimeout(timer);
-    timer = setTimeout(push, 1500);
+    if (!cfg || !bin) return;
+    latest = { ...latest, ...fields, updatedAt: Date.now() };
+    // Hosting deploy takes a few seconds; 10s debounce batches bursts.
+    clearTimeout(register._t);
+    register._t = setTimeout(publish, 10000);
   }
 
-  return { register, configured: () => !!cfg };
+  return { register, configured: () => !!cfg && !!bin };
 }
 
 module.exports = { createTcbRegistrar };

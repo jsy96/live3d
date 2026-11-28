@@ -7,6 +7,12 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-10**（2026-11-28）
+  - **CDN 正式上线腾讯云 CloudBase（环境 `ajmj-d2g1eishpbe7677fe`）**：桌宠手机页固定地址 **`https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`**——模型从 CDN 边缘加载（15MB 实测 **2.6s**，隧道直连 31~41s，提速 12 倍+）、固定域名固定 HTTPS（Android 可装全屏 PWA）；`live.json` 活地址由 PC 注册器（`main/tcb.js`）在 LAN/隧道变化时自动发布到 `/pet/live.json`（弃用云函数方案——静态 JSON + 同源拉取即可，零函数零数据库）；`@cloudbase/cli` 装为 devDependency（`cloudbase login` 一次授权后 PC 自动发布）
+  - **架构最终形**：`https 页面(CDN)` → `live.json(CDN)` → `wss://隧道(电脑)`——HTTPS 页连 `ws://` 内网地址属混合内容必被拦，**远程同步只走隧道**；同一 Wi-Fi 场景请继续用电脑直连页 `http://<ip>:31790`（功能最全）
+  - **修复链**（部署过程逐个踩掉）：①git-bash 把 `/` 云路径参数转义成 `C:/Program Files/Git/`（部署一律 `MSYS_NO_PATHCONV=1`）；②Node 20 `spawn('.cmd')` 无 `shell:true` 直接失败（改 `spawn('node', [cli入口.js])`）；③状态推送的模型 URL 是根相对、CDN 页在 `/pet/` 下 404（platform.js `cdnEntry` 重写到 CDN 前缀）；④TCB 静态托管自带缓存 TTL 导致旧 bundle 复活（html 资源引用带 `?v=版本号`、live.json/assets.json 拉取带时间戳）
+  - **⚠ 事故记录与修复**：部署时一度把站点传到托管**根目录，覆盖了同环境已有项目「小智云端语音对话」的 `index.html`**——已即时止损：根目录我的全部杂物与被转义路径删除、桌宠部署固定在 `/pet/` 子目录永不碰根、小智首页按标准 Vite 结构重建（引用其幸存的 `assets/index-uA8VlgrN.js` 等原文件，title/viewport/theme-color 依缓存快照）；**待老金打开根域名验收小智功能**，若重建页与原版有差异（原文件仅存浏览器缓存前 300 字节），需从小智项目源码重新部署一次
+  - 实测：CDN 页 `/pet/` 全链路——资产秒下（bundle 1MB/1s、模型 15MB/2.6s）→ live.json 发现电脑 → wss 隧道连回（hello）→ 自动跟随桌面模型（`curChip: avatarsample b`、无报错面板）
 - **v1.0.261128-9**（2026-11-28）
   - **静态资产上腾讯云 CloudBase CDN（混合架构，本地已全链路验证）**：模型加载是公网链路瓶颈（家上行 ~3Mbps，11.5MB 需 31s），静态部分搬 CDN 后手机从腾讯云边缘秒下，活同步（WS 漫游/换模型）仍走隧道回家（KB 级消息无压力），还附送**固定域名 + 固定 HTTPS**（不再每次换 URL、Android PWA 稳定）
   - **新增组件**：`scripts/tcb/pet-hub/`（云函数：GET 返回活地址 / POST 注册，REG_SECRET 鉴权，数据库集合 pet_live）；`main/tcb.js`（PC 端注册器，读 `tcb-config.json`——gitignored，无配置则静默跳过）；`scripts/build-cdn-site.mjs`（编排 `dist/cdn/`：页面+bundle+样式+模型+动画+图标+PWA+`assets.json` 目录+`cdn-config.js` 运行时配置，CSP 换 CDN 版）；`scripts/test-cdn-local.mjs`（**本地端到端测试**：9990 假 hub + 9991 静态服务，无需腾讯云即可验证整套架构）

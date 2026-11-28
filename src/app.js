@@ -38,8 +38,9 @@ async function main() {
     document.body.classList.add('web');
     // PWA: register the (network-passthrough) service worker so "Add to Home
     // Screen" yields a standalone app. Failure is non-fatal — the page works
-    // fine as a plain tab too.
-    navigator.serviceWorker?.register('/sw.js').catch(() => {});
+    // fine as a plain tab too. CDN copies live under /pet/, LAN ones at root.
+    const swBase = window.__LIVE3D_CDN__?.base ?? '';
+    navigator.serviceWorker?.register(`${swBase}/sw.js`).catch(() => {});
   }
   let animator = null;
   let hitTester = null;

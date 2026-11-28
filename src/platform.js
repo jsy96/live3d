@@ -18,8 +18,10 @@ import { RoamingClient, ROAMING_EVENTS } from './sync/roaming.js';
 const cdnJson = { loaded: null };
 async function getCdnJson() {
   if (!cdnJson.loaded) {
+    // CDN copies live under a sub-path (CDN.base, e.g. /pet/). Static hosting
+    // sets its own cache TTL — bust it so catalog changes show immediately.
     try {
-      const r = await fetch('/assets.json');
+      const r = await fetch(`${CDN?.base ?? ''}/assets.json?t=${Date.now()}`);
       cdnJson.loaded = r.ok ? await r.json() : {};
     } catch {
       cdnJson.loaded = {};
@@ -55,15 +57,32 @@ async function webWsUrl() {
   const hub = CDN?.hubUrl;
   if (hub) {
     try {
-      const r = await fetch(hub, { signal: AbortSignal.timeout(3000) });
+      // Cache-bust: live.json changes whenever the PC's address does.
+      const r = await fetch(`${hub}?t=${Date.now()}`, { signal: AbortSignal.timeout(3000) });
       const j = await r.json();
-      const base = j.tunnelUrl || (Array.isArray(j.lanUrls) && j.lanUrls[0]);
-      if (base) return `${base.replace(/^http/, 'ws')}/ws`;
+      const candidates = [j.tunnelUrl, ...(Array.isArray(j.lanUrls) ? j.lanUrls : [])];
+      // An https CDN page cannot open insecure ws:// (mixed content) — only
+      // the tunnel (wss) works remotely; same-Wi-Fi phones should use the
+      // PC's own LAN page instead of the CDN copy.
+      const secureOnly = location.protocol === 'https:';
+      for (const c of candidates) {
+        if (!c) continue;
+        if (secureOnly && !/^https:/i.test(c)) continue;
+        return `${c.replace(/^http/i, 'ws')}/ws`;
+      }
     } catch {
       /* hub unreachable: standalone mode, try same-origin */
     }
   }
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+}
+
+// Entries from the PC carry root-relative URLs (/models/..) meant for its
+// own origin; CDN copies live under a sub-path — rewrite them there.
+function cdnEntry(entry, kind) {
+  if (!entry || !CDN) return entry;
+  const file = encodeURIComponent(String(entry.path ?? '').split(/[\\/]/).pop() ?? '');
+  return { ...entry, url: `${CDN.base}${kind}/${file}` };
 }
 
 function ensureWebSync() {
@@ -72,12 +91,13 @@ function ensureWebSync() {
   const cbs = { model: [], animation: [], facing: [], play: [], roam: [] };
   client._cbs = cbs;
   client.on(ROAMING_EVENTS.STATE, (msg) => {
-    if (msg.model) for (const cb of cbs.model) cb(msg.model);
-    if (msg.animation !== undefined) for (const cb of cbs.animation) cb(msg.animation);
+    if (msg.model) for (const cb of cbs.model) cb(cdnEntry(msg.model, 'models'));
+    if (msg.animation) for (const cb of cbs.animation) cb(cdnEntry(msg.animation, 'animations'));
+    if (msg.animation === null) for (const cb of cbs.animation) cb(null);
     if (typeof msg.facing === 'number') for (const cb of cbs.facing) cb(msg.facing);
   });
   client.on(ROAMING_EVENTS.PLAY, (msg) => {
-    if (msg.entry) for (const cb of cbs.play) cb(msg.entry);
+    if (msg.entry) for (const cb of cbs.play) cb(cdnEntry(msg.entry, 'animations'));
   });
   client.on(ROAMING_EVENTS.ROAM, (msg) => {
     for (const cb of cbs.roam) cb(msg.cmd);
