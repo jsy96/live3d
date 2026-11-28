@@ -7,6 +7,9 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-8**（2026-11-28）
+  - **修复：公网链接 Error 1016（Origin DNS error，老金真机反馈）**——两因合一：①快速隧道**每次重启换新 URL**，旧链接必然 1016（打开的必须是当前地址，托盘 `Public link: xxx` 行实时显示）；②cloudflared 默认 QUIC 在国内易被重置导致连接器掉线——隧道参数加 **`--protocol http2`**（TLS 上的 HTTP/2，CN 网络下稳定得多）
+  - 实测：http2 隧道新 URL `200 in 2.3s`；当前有效地址以托盘/扫码窗口为准
 - **v1.0.261128-7**（2026-11-28）
   - **修复：iPhone 走公网链接「模型加载失败」**（老金真机反馈）——页面/API/bundle 均正常、仅 15MB 模型大文件传输挂，双管齐下：
     - **模型/动画请求绕过 Service Worker**（`sw.js` 对 `/models/`、`/animations/` 不再 `respondWith`）：WebKit 的 SW fetch 对大二进制响应有 Chrome 没有的怪癖，直连原生网络栈

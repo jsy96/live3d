@@ -51,10 +51,24 @@ function createTunnel(log, hooks = {}) {
       return false;
     }
     url = null;
-    proc = spawn(exe, ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    proc = spawn(
+      exe,
+      [
+        'tunnel',
+        '--url',
+        `http://localhost:${port}`,
+        // Quick tunnels default to QUIC, which gets reset by the GFW and
+        // kills the connector (surfacing as Error 1016 on the public URL).
+        // HTTP/2 over TLS is far more stable on CN networks.
+        '--protocol',
+        'http2',
+        '--no-autoupdate',
+      ],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      }
+    );
     // cloudflared prints the assigned URL on stderr; grab the first match.
     const pickUrl = (chunk) => {
       if (url) return;
