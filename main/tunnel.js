@@ -19,6 +19,7 @@ function findCloudflared() {
   const candidates = [
     exe,
     path.join(process.env.LOCALAPPDATA ?? '', 'Microsoft', 'WinGet', 'Links', exe),
+    path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'cloudflared', exe),
     path.join(process.env.ProgramFiles ?? '', 'cloudflared', exe),
     path.join(process.env['ProgramFiles(x86)'] ?? '', 'cloudflared', exe),
   ];

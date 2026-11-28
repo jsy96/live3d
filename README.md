@@ -9,8 +9,8 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 - **v1.0.261128-6**（2026-11-28）
   - **公网链接（借桌宠给外地朋友，代码已备好待启用）**：新增 `main/tunnel.js`——cloudflared 快速隧道把局域网服务暴露为 `https://*.trycloudflare.com` 公网地址（免费、无需账号/公网 IP/端口转发），朋友手机浏览器打开即玩（还顺便满足 Android PWA 的 HTTPS 要求）；托盘 `Public link (internet)` 开关 / CLI `--tunnel <on|off|toggle>`；开启后**扫码窗口主二维码自动切换为公网地址**；朋友页面作为普通漫游客户端出现在设备列表——「Send pet to phone」选他的手机、`--show` 召回，整套定向漫游机制直接复用；`wss://` 适配已在 roaming.js（https 页面自动切换）；关闭 LAN 时联动关闭隧道；退出前 `before-quit` 收掉进程
-  - **依赖与安全**：需 cloudflared CLI（`winget install Cloudflare.cloudflared`；本会话 winget 0x80072ee2 超时、GitHub 直连被墙、镜像域名待老金确认，**尚未安装**——托盘项自动置灰，`--tunnel on` 仅落日志提示）；快速隧道 URL 即凭据（运行期间公网可访问 models/animations），借完就关；`trycloudflare.com` 为官方免费临时隧道，重启换地址
-  - 实测：无 cloudflared 时冷启动/step1/step2/LAN 页面全回归通过；隧道链路端到端验证**待安装后补**
+  - **依赖与安全**：需 cloudflared CLI（`winget install Cloudflare.cloudflared`；本机装于 `%LOCALAPPDATA%\Programs\cloudflared\cloudflared.exe` 2026.11.2——winget 下载超时/GitHub 被墙，经老金确认后走其镜像 `dl.leige.online` 下载）；快速隧道 URL 即凭据（运行期间公网可访问 models/animations），借完就关；`trycloudflare.com` 为官方免费临时隧道，重启换地址
+  - 实测（老金授权后临时开隧道）：公网 HTTP 全通（`/` 302、`/api/version` 200、bundle 1.5MB 200）；**WS 漫游协议真穿 Cloudflare 边际**——`step1`（初始 state→换模型→定向移交 enter）与 `step2`（召回 exit）全过；`--tunnel off` 后日志 `[tunnel] stopped`、公网 530 不可达；期间持宠客户端断线的自动回家（`[roam] the phone holding the pet disconnected`）在公网链路上同样正确
   - **多手机定向漫游（老金需求：多台 iPhone 之间转来转去）**：每台手机获得身份（`hello` 携带 localStorage 持久化的 `Phone·xxxx` 名，电脑端选择器可区分）；「留在这里」**只发给点的那台**（`petLocation` = 手机 client id），其余手机瞬时收起副本——多台同屏不再分身；持有桌宠的手机断线 → 桌宠自动回家（按 id 精确判定）；托盘 `Send pet to phone` 在多台在线时弹**原生选择器**选目标；手机间可直接对转（A 的桌宠被 B 要走，无需先回电脑）
   - **修复：后台/被遮挡页面的跑出动画冻结**——浏览器对不可见页面暂停 rAF，桌宠永远跑不走；现在 `document.hidden` 时收到 exit 直接收起（跳过动画），真机上锁屏/切走的手机同样正确
   - 跨网络（不限同一局域网）方案：**Tailscale**（PC 与各 iPhone 各装一份、同一账号登录即组网，手机访问 `http://100.x.y.z:31790`，全部功能原样可用；Tailscale 网卡 IP 会自动出现在扫码窗口的候选地址里）；或自建公网中继（工程量大，未实现）
