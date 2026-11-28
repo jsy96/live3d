@@ -7,6 +7,12 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 
 ## 更新记录
 
+- **v1.0.261128-9**（2026-11-28）
+  - **静态资产上腾讯云 CloudBase CDN（混合架构，本地已全链路验证）**：模型加载是公网链路瓶颈（家上行 ~3Mbps，11.5MB 需 31s），静态部分搬 CDN 后手机从腾讯云边缘秒下，活同步（WS 漫游/换模型）仍走隧道回家（KB 级消息无压力），还附送**固定域名 + 固定 HTTPS**（不再每次换 URL、Android PWA 稳定）
+  - **新增组件**：`scripts/tcb/pet-hub/`（云函数：GET 返回活地址 / POST 注册，REG_SECRET 鉴权，数据库集合 pet_live）；`main/tcb.js`（PC 端注册器，读 `tcb-config.json`——gitignored，无配置则静默跳过）；`scripts/build-cdn-site.mjs`（编排 `dist/cdn/`：页面+bundle+样式+模型+动画+图标+PWA+`assets.json` 目录+`cdn-config.js` 运行时配置，CSP 换 CDN 版）；`scripts/test-cdn-local.mjs`（**本地端到端测试**：9990 假 hub + 9991 静态服务，无需腾讯云即可验证整套架构）
+  - **渲染层 CDN 模式**（`platform.js`）：`window.__LIVE3D_CDN__` 标记——列表回退 `assets.json` 目录、活地址经 hub 发现（隧道优先、LAN 回退、AbortSignal 3s 超时）、无 hub 时 standalone；LAN 直连模式完全不受影响
+  - **排错记录（CSP 坑）**：主机通配符只认最左侧星号（`*.foo.com`），`ws://192.168.*:*` 是**非法语法会被静默拦截**（Edge 控制台才见 violation）；CDN 页 CSP 用方案通配 `https:/wss:` + `blob: data:`（three.js 贴图走 blob:，漏了会挡纹理）
+  - 实测（本地 CDN 架构）：CDN 页从静态源加载全部资产（`v1.0.261128-9 cdn platform=web`、模型/动画/反应剪辑全过）→ hub 发现 PC → WS 连回真机（`hello #3/#5 Phone·gs3j`）→ 注册器推送落地（fake-hub 收到 lanUrls+版本）；**待老金 TCB 环境 ID 后一键部署真环境**
 - **v1.0.261128-8**（2026-11-28）
   - **修复：公网链接 Error 1016（Origin DNS error，老金真机反馈）**——两因合一：①快速隧道**每次重启换新 URL**，旧链接必然 1016（打开的必须是当前地址，托盘 `Public link: xxx` 行实时显示）；②cloudflared 默认 QUIC 在国内易被重置导致连接器掉线——隧道参数加 **`--protocol http2`**（TLS 上的 HTTP/2，CN 网络下稳定得多）
   - 实测：http2 隧道新 URL `200 in 2.3s`；当前有效地址以托盘/扫码窗口为准

@@ -4,27 +4,68 @@
 //   - Plain browser (mobile web page on the LAN host): no bridge; listings come
 //     from the HTTP API and live sync rides the roaming WebSocket.
 const bridge = typeof window !== 'undefined' ? window.live3d : undefined;
+// CDN mode (assets on Tencent CloudBase; set by cdn-config.js on the staged
+// page): listings come from assets.json and the live PC address is discovered
+// via the pet-hub cloud function.
+const CDN = typeof window !== 'undefined' ? window.__LIVE3D_CDN__ : undefined;
 
 import { RoamingClient, ROAMING_EVENTS } from './sync/roaming.js';
 
 // LAN web mode (phone browser): listings come from the desktop host's HTTP API
 // (main/lan.js). In a plain local page (file:// or offline) fetch fails and we
 // degrade to an empty list — the file-picker setup panel still works there.
+// CDN mode falls back to the static assets.json catalog shipped with the page.
+const cdnJson = { loaded: null };
+async function getCdnJson() {
+  if (!cdnJson.loaded) {
+    try {
+      const r = await fetch('/assets.json');
+      cdnJson.loaded = r.ok ? await r.json() : {};
+    } catch {
+      cdnJson.loaded = {};
+    }
+  }
+  return cdnJson.loaded;
+}
+
 async function webList(endpoint) {
   try {
     const r = await fetch(endpoint);
-    if (!r.ok) return [];
-    const arr = await r.json();
-    return Array.isArray(arr) ? arr : [];
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr)) return arr;
+    }
   } catch {
-    return [];
+    /* fall through to the CDN catalog */
   }
+  if (CDN) {
+    const key = endpoint === '/api/models' ? 'models' : 'animations';
+    const j = await getCdnJson();
+    return Array.isArray(j[key]) ? j[key] : [];
+  }
+  return [];
 }
 
 // Lazy WebSocket link to the desktop host (web mode only). Created when the
 // first subscriber registers; multiplexes 'state'/'play'/'roam' messages onto
-// the on*Changed callbacks below.
+// the on*Changed callbacks below. In CDN mode the live PC address is asked
+// from the pet-hub cloud function first (tunnel URL, else LAN candidates).
 let webSync = null;
+async function webWsUrl() {
+  const hub = CDN?.hubUrl;
+  if (hub) {
+    try {
+      const r = await fetch(hub, { signal: AbortSignal.timeout(3000) });
+      const j = await r.json();
+      const base = j.tunnelUrl || (Array.isArray(j.lanUrls) && j.lanUrls[0]);
+      if (base) return `${base.replace(/^http/, 'ws')}/ws`;
+    } catch {
+      /* hub unreachable: standalone mode, try same-origin */
+    }
+  }
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+}
+
 function ensureWebSync() {
   if (webSync) return webSync;
   const client = new RoamingClient();
@@ -41,7 +82,7 @@ function ensureWebSync() {
   client.on(ROAMING_EVENTS.ROAM, (msg) => {
     for (const cb of cbs.roam) cb(msg.cmd);
   });
-  client.connect(); // reconnects on its own; failures are silent no-ops
+  webWsUrl().then((url) => client.connect(url)); // reconnects on its own
   webSync = client;
   return client;
 }
@@ -168,6 +209,10 @@ export const platform = {
       }
     } catch {
       /* not served by the LAN host */
+    }
+    if (CDN) {
+      const j = await getCdnJson();
+      if (j.version) return `${j.version} cdn`;
     }
     return 'web';
   },

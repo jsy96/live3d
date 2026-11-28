@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { createTray } = require('./tray');
 const { createLanServer } = require('./lan');
 const { createTunnel } = require('./tunnel');
+const { createTcbRegistrar } = require('./tcb');
 const { APP_VERSION } = require('./version');
 
 const MODELS_DIR = path.join(__dirname, '..', 'models');
@@ -667,8 +668,17 @@ if (!gotLock) {
     // tray or --tunnel on when lending the pet to a remote friend.
     tunnel = createTunnel(appendLog, {
       getPort: () => lan?.port,
-      onUrl: () => trayApi?.refresh(),
+      onUrl: (url) => {
+        trayApi?.refresh();
+        // CDN page learns the live address from the TCB pet-hub.
+        tcbRegistrar?.register({ tunnelUrl: url, lanUrls: lan?.urls() ?? [], version: APP_VERSION });
+      },
     });
+
+    // TCB registrar (no-op without tcb-config.json): publishes the live
+    // addresses for the CDN-hosted page.
+    const tcbRegistrar = createTcbRegistrar(appendLog);
+    tcbRegistrar.register({ lanUrls: lan?.urls() ?? [], version: APP_VERSION });
 
     // Command-line args of THIS (first) instance, e.g. a cold
     // `start-pet.bat --play hello` launch; queued until the renderer is ready.
