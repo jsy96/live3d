@@ -219,7 +219,7 @@ await A.eval('document.querySelector(".roam-act").click()');
   await waitFor(async () => (await B.eval('document.body.dataset.petHere')) === '0', 30000, 'B stowed (2nd adopt)');
   console.log('A re-adopted; killing A browser...');
   A.proc.kill();
-  await waitFor(async () => (await B.eval('document.body.dataset.petHere')) === '1', 150000, 'auto-return after holder death');
+  await waitFor(async () => (await B.eval('document.body.dataset.petHere')) === '1', 40000, 'auto-return after holder death');
   console.log('auto-return ✔ (pet freed after holder offline)');
   extra = ' + auto-return';
 }

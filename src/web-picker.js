@@ -39,16 +39,12 @@ export function createWebPicker({ models, animations, onPickModel, onPickAnimati
     return n;
   };
 
-  // --- floating dock: roam shortcuts + console toggle
+  // --- floating dock: console toggle (+ PC-roam shortcuts on LAN pages
+  // only — the cloud page roams via the 🏠 whereabouts panel instead)
   const dock = el('div', 'web-dock');
-  const toPhone = el('button', 'web-fab web-roam', '\u{1F4F1}');
-  toPhone.title = '留在这里（桌宠跑到手机）';
-  const toDesktop = el('button', 'web-fab web-roam', '\u{1F5A5}');
-  toDesktop.title = '送到电脑（桌宠回电脑）';
   const fab = el('button', 'web-fab', '☰');
   fab.title = '桌宠控制台';
-  toPhone.addEventListener('click', () => platform.roamTo('phone'));
-  toDesktop.addEventListener('click', () => platform.roamTo('desktop'));
+  const cloudMode = !!window.__LIVE3D_CDN__?.envId;
 
   const sheet = el('div', 'web-sheet hidden');
   // Full-screen dim layer under the sheet: tapping anywhere outside closes
@@ -64,7 +60,16 @@ export function createWebPicker({ models, animations, onPickModel, onPickAnimati
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') openSheet(false);
   });
-  dock.append(toPhone, toDesktop, fab);
+  dock.append(fab);
+  if (!cloudMode) {
+    const toPhone = el('button', 'web-fab web-roam', '\u{1F4F1}');
+    toPhone.title = '留在这里（桌宠跑到手机）';
+    const toDesktop = el('button', 'web-fab web-roam', '\u{1F5A5}');
+    toDesktop.title = '送到电脑（桌宠回电脑）';
+    toPhone.addEventListener('click', () => platform.roamTo('phone'));
+    toDesktop.addEventListener('click', () => platform.roamTo('desktop'));
+    dock.append(toDesktop, toPhone);
+  }
   document.body.append(dock, backdrop, sheet);
 
   const close = el('button', 'web-close', '✕');

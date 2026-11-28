@@ -26,9 +26,9 @@
 const COLLECTION = 'pet_state';
 const DOC_ID = 'global';
 const HOMES = 'pet_homes';
-const HEARTBEAT_MS = 20000;
-const HOME_TTL_MS = 60000; // stale after three missed beats
-const HOMES_POLL_MS = 10000; // presence list refresh (plain query, no watch)
+const HEARTBEAT_MS = 5000;
+const HOME_TTL_MS = 12000; // stale after two missed beats
+const HOMES_POLL_MS = 5000; // presence list refresh (plain query, no watch)
 
 
 // Per-device tag stored in localStorage: echoes of our own writes come back
@@ -171,6 +171,22 @@ export class CloudPetSync {
     };
     this._homesTimer = setInterval(poll, HOMES_POLL_MS);
     poll();
+    // Leaving the page — or backgrounding it on a phone, where timers
+    // freeze anyway — immediately marks this home offline, so a held pet
+    // returns to the cloud home in seconds instead of waiting out the
+    // heartbeat TTL. Coming back re-beats at once.
+    const tombstone = () => {
+      try {
+        this.db?.collection(HOMES).doc(this.id).set({ name: this.name ?? '', lastSeen: 1 });
+      } catch {
+        /* best effort — the TTL covers the rest */
+      }
+    };
+    document.addEventListener('pagehide', tombstone);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) tombstone();
+      else this._beat();
+    });
   }
 
   _beat() {
@@ -271,7 +287,7 @@ export class CloudPetSync {
       } catch (err) {
         console.warn(`[ai-live3d] holder-gone recheck failed: ${err?.message ?? err}`);
       }
-    }, 5000);
+    }, 2000);
   }
 
   _reconnectLater() {

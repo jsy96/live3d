@@ -76,17 +76,24 @@ export function createCloudRoamUI() {
   document.body.append(backdrop, sheet);
   if (dock) dock.prepend(fab); // first dock slot: the always-there cloud action
 
-  function open(v) {
+  function setPanel(v) {
     sheet.classList.toggle('hidden', !v);
     backdrop.classList.toggle('hidden', !v);
   }
-  fab.addEventListener('click', () => open(sheet.classList.contains('hidden')));
+  // User-initiated toggles remember the choice until the holder changes.
+  function open(v) {
+    setPanel(v);
+    userClosed = !v;
+  }
+  fab.addEventListener('click', () => setPanel(sheet.classList.contains('hidden')));
   backdrop.addEventListener('click', () => open(false));
   close.addEventListener('click', () => open(false));
   window.addEventListener('keydown', (e) => e.key === 'Escape' && open(false));
 
   // --- rendering ---------------------------------------------------------
   let lastHolderSeen = undefined; // for the auto-open transition
+  let userClosed = false; // user dismissed the panel while the pet is away
+  let autoOpened = false; // we opened it (we also close it when pet returns)
   let busy = false;
   let lastActionAt = 0; // holder changes are dramatic: rapid double-fires
   // (a racing click, a re-render overlap) must not flip the pet around.
@@ -172,11 +179,20 @@ export function createCloudRoamUI() {
       body.append(homesBox);
     }
 
-    // Pet left for someone else -> surface the list automatically.
-    if (lastHolderSeen !== undefined && state.holder && state.holder !== state.me && state.holder !== lastHolderSeen) {
-      open(true);
-    }
+    // While the pet is away the list stays up on its own (老金: no extra
+    // tap); when the pet comes back the auto-opened panel closes itself.
+    // A manual close is respected until the holder actually changes.
+    const prevHolder = lastHolderSeen;
     lastHolderSeen = state.holder ?? null;
+    if (prevHolder !== undefined && prevHolder !== lastHolderSeen) userClosed = false;
+    const away = !!state.holder && state.holder !== state.me;
+    if (away && !userClosed) {
+      setPanel(true);
+      autoOpened = true;
+    } else if (!away && autoOpened) {
+      setPanel(false);
+      autoOpened = false;
+    }
   }
 
   platform.onRoamState(render);
