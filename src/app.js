@@ -264,10 +264,14 @@ async function main() {
   // phone is the dock's 📱 button.
   platform.onRoam((cmd) => {
     if (cmd === 'exit') {
-      viewer.startRoam('exit', () => {
+      const finish = () => {
         if (platform.isDesktop) platform.roamExited();
         else viewer.setPetVisible(false);
-      });
+      };
+      // Occluded/background pages don't run rAF — the run-off animation would
+      // freeze forever and the pet would never leave. Hide instantly instead.
+      if (document.hidden) finish();
+      else viewer.startRoam('exit', finish);
     } else if (cmd === 'enter') {
       if (!platform.isDesktop && !viewer.petVisible) viewer.setPetVisible(true);
       viewer.startRoam('enter');

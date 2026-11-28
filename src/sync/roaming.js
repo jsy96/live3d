@@ -24,10 +24,26 @@ export const ROAMING_EVENTS = Object.freeze({
 
 const RECONNECT_MS = 2000;
 
+// Stable per-device tag so the desktop can tell several phones apart in the
+// hand-off chooser ("Phone·a1b2"). Stored in localStorage; random fallback.
+function deviceName() {
+  try {
+    let tag = localStorage.getItem('live3d-name');
+    if (!tag) {
+      tag = Math.random().toString(36).slice(2, 6);
+      localStorage.setItem('live3d-name', tag);
+    }
+    return `Phone·${tag}`;
+  } catch {
+    return 'Phone';
+  }
+}
+
 export class RoamingClient {
   constructor() {
     this.ws = null;
     this.url = null;
+    this.name = deviceName();
     this.handlers = new Map(); // event type -> cb[]
     this.closedByUs = false;
     this._retryTimer = null;
@@ -55,7 +71,7 @@ export class RoamingClient {
       }
       this.ws = ws;
       ws.onopen = () => {
-        this.send(ROAMING_EVENTS.HELLO, { ua: navigator.userAgent });
+        this.send(ROAMING_EVENTS.HELLO, { ua: navigator.userAgent, name: this.name });
         done(true);
       };
       ws.onerror = () => done(false);

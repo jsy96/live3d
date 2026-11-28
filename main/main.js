@@ -88,35 +88,59 @@ async function setLan(on) {
   return ok;
 }
 
-// --- roaming hand-off (PC <-> phone) ----------------------------------------
-// 'desktop' = the pet lives in the desktop window; 'phone' = the window is
-// hidden and the pet runs on the connected phone pages. A hand-off plays a
-// run-off animation on the source device before the target runs it in.
+// --- roaming hand-off (PC <-> phones) ---------------------------------------
+// petLocation: 'desktop', or the client id of the phone that owns the pet.
+// A hand-off TARGETS one phone (every other phone stows its copy), so several
+// iPhones can pass the pet around without it duplicating.
 let petLocation = 'desktop';
 let roamExitTimer = null;
 
-function finishGoPhone() {
+function finishGoPhone(targetId) {
   clearTimeout(roamExitTimer);
   roamExitTimer = null;
   win?.hide();
-  lan?.broadcastRoam('enter');
-  appendLog('[roam] pet handed off to phone');
+  lan?.broadcastRoam('exit', targetId); // other phones stow their copy
+  lan?.sendRoam(targetId, 'enter'); // the target runs the pet in
+  const name = lan?.clientList().find((c) => c.id === targetId)?.name ?? `#${targetId}`;
+  appendLog(`[roam] pet handed off to ${name}`);
 }
 
-/** Send the pet to the connected phones (run-off, hide window, phones run-in). */
-function goPhone() {
+/** Hand the pet to one phone (targetId). With several phones and no target,
+ *  ask which one should receive it (native chooser). */
+function goPhone(targetId) {
   if (!lan?.running || lan.clientsCount() === 0) {
     appendLog('[roam] no phone connected; pet stays on the desktop');
     return;
   }
-  petLocation = 'phone';
+  const list = lan.clientList();
+  if (targetId == null && list.length > 1) {
+    dialog
+      .showMessageBox(win, {
+        type: 'question',
+        title: 'Send pet to phone',
+        message: 'Which phone should get the pet?',
+        buttons: [...list.map((c) => c.name), 'Cancel'],
+        defaultId: 0,
+        cancelId: list.length,
+      })
+      .then(({ response }) => {
+        if (response < list.length) goPhone(list[response].id);
+      });
+    return;
+  }
+  const target = targetId != null ? list.find((c) => c.id === targetId) : list[0];
+  if (!target) {
+    appendLog(`[roam] phone #${targetId} is gone; pet stays where it is`);
+    return;
+  }
+  petLocation = target.id;
   if (win?.isVisible()) {
     win.webContents.send('roam:event', 'exit');
     // Safety net: finish the hand-off even if the renderer never reports back.
     clearTimeout(roamExitTimer);
-    roamExitTimer = setTimeout(finishGoPhone, 2500);
+    roamExitTimer = setTimeout(() => finishGoPhone(target.id), 2500);
   } else {
-    finishGoPhone();
+    finishGoPhone(target.id);
   }
 }
 
@@ -278,7 +302,7 @@ function registerIpc() {
   });
 
   // Roaming: the desktop renderer finished its run-off animation.
-  ipcMain.on('roam:exited', () => finishGoPhone());
+  ipcMain.on('roam:exited', () => finishGoPhone(petLocation !== 'desktop' ? petLocation : null));
 
   // Wheel-turned (desktop) or background-drag (phone) facing; store + relay
   // to every device including the other renderer (same pet, same angle).
@@ -580,7 +604,7 @@ if (!gotLock) {
           : null,
         facing: currentFacingDeg,
       }),
-      onPick: (what, value) => {
+      onPick: (what, value, fromClientId) => {
         if (what === 'model') {
           const entry = resolveEntry(listModels(), String(value ?? ''));
           if (entry) setModel(entry);
@@ -596,15 +620,21 @@ if (!gotLock) {
         } else if (what === 'facing' && Number.isFinite(Number(value))) {
           setFacing(Number(value));
         } else if (what === 'roam') {
-          if (value === 'phone') goPhone();
+          // 'phone' targets the phone that asked (fromClientId).
+          if (value === 'phone') goPhone(fromClientId);
           else if (value === 'desktop') goDesktop();
         }
       },
       onClientsChanged: () => {
         trayApi?.refresh();
-        // Pet lives on a phone and the last one just left: come back home.
-        if (petLocation === 'phone' && lan && lan.clientsCount() === 0 && !roamExitTimer) {
-          appendLog('[roam] all phones disconnected; pet returns to the desktop');
+        // The phone holding the pet just disconnected: come back home.
+        if (
+          petLocation !== 'desktop' &&
+          lan &&
+          !lan.clientList().some((c) => c.id === petLocation) &&
+          !roamExitTimer
+        ) {
+          appendLog('[roam] the phone holding the pet disconnected; pet returns to the desktop');
           goDesktop();
         }
       },

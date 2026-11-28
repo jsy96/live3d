@@ -215,6 +215,12 @@ function createLanServer(log, hooks = {}) {
   }
 
   // --- WebSocket live sync (phones) -----------------------------------------
+  // Each connected phone gets an identity ({id, name}) so the roaming hand-off
+  // can TARGET one device: "留在这里" on phone B moves the pet from A to B,
+  // not to every phone at once.
+  const clients = new Map(); // ws -> { id, name }
+  let nextClientId = 1;
+
   function attachWs(s) {
     let WebSocketServer;
     try {
@@ -239,7 +245,9 @@ function createLanServer(log, hooks = {}) {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     });
     wss.on('connection', (ws, req) => {
-      log(`[lan] phone connected from ${req.socket.remoteAddress ?? '?'}`);
+      const client = { id: nextClientId++, name: null };
+      clients.set(ws, client);
+      log(`[lan] phone #${client.id} connected from ${req.socket.remoteAddress ?? '?'}`);
       const hello = hooks.buildState?.();
       if (hello) ws.send(JSON.stringify({ type: 'state', ...hello }));
       hooks.onClientsChanged?.();
@@ -252,23 +260,38 @@ function createLanServer(log, hooks = {}) {
           return;
         }
         if (msg.type === 'hello') {
-          log(`[lan] hello: ${String(msg.ua ?? '').slice(0, 90)}`);
+          client.name = String(msg.name ?? `Phone ${client.id}`).slice(0, 24) || `Phone ${client.id}`;
+          log(`[lan] hello #${client.id} ${client.name}: ${String(msg.ua ?? '').slice(0, 70)}`);
         } else if (msg.type === 'pick') {
-          hooks.onPick?.(msg.what, msg.value);
+          hooks.onPick?.(msg.what, msg.value, client.id);
         }
       });
-      ws.on('close', () => hooks.onClientsChanged?.());
+      ws.on('close', () => {
+        clients.delete(ws);
+        hooks.onClientsChanged?.();
+      });
       ws.on('error', () => {
         /* per-socket errors must not take the server down */
       });
     });
   }
 
-  function broadcast(obj) {
+  function broadcast(obj, exceptClientId) {
     if (!wss) return;
     const s = JSON.stringify(obj);
-    for (const c of wss.clients) {
-      if (c.readyState === 1) c.send(s);
+    for (const [ws, c] of clients) {
+      if (c.id !== exceptClientId && ws.readyState === 1) ws.send(s);
+    }
+  }
+
+  function sendTo(clientId, obj) {
+    if (!wss) return;
+    const s = JSON.stringify(obj);
+    for (const [ws, c] of clients) {
+      if (c.id === clientId && ws.readyState === 1) {
+        ws.send(s);
+        return;
+      }
     }
   }
 
@@ -477,7 +500,8 @@ ${others.length > 0 ? `<div class="alt">Other adapters:<br>${others.map((u) => e
       server = null;
       port = null;
       if (wss) {
-        for (const c of wss.clients) c.terminate();
+        for (const [ws] of clients) ws.terminate();
+        clients.clear();
         wss.close();
         wss = null;
       }
@@ -488,7 +512,11 @@ ${others.length > 0 ? `<div class="alt">Other adapters:<br>${others.map((u) => e
     },
 
     clientsCount() {
-      return wss ? wss.clients.size : 0;
+      return clients.size;
+    },
+    /** [{id, name}] of connected phones (name arrives with the hello). */
+    clientList() {
+      return [...clients.values()].map(({ id, name }) => ({ id, name: name ?? `Phone ${id}` }));
     },
     broadcastState(fields) {
       broadcast({ type: 'state', ...fields });
@@ -496,8 +524,13 @@ ${others.length > 0 ? `<div class="alt">Other adapters:<br>${others.map((u) => e
     broadcastPlay(entry) {
       broadcast({ type: 'play', entry });
     },
-    broadcastRoam(cmd) {
-      broadcast({ type: 'roam', cmd });
+    /** Roam command for every phone except one (the hand-off target). */
+    broadcastRoam(cmd, exceptClientId) {
+      broadcast({ type: 'roam', cmd }, exceptClientId);
+    },
+    /** Roam command to exactly one phone (the hand-off target). */
+    sendRoam(clientId, cmd) {
+      sendTo(clientId, { type: 'roam', cmd });
     },
 
     showQr,
