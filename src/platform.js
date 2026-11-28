@@ -10,6 +10,7 @@ const bridge = typeof window !== 'undefined' ? window.live3d : undefined;
 const CDN = typeof window !== 'undefined' ? window.__LIVE3D_CDN__ : undefined;
 
 import { RoamingClient, ROAMING_EVENTS } from './sync/roaming.js';
+import { CloudPetSync } from './sync/cloud.js';
 
 // LAN web mode (phone browser): listings come from the desktop host's HTTP API
 // (main/lan.js). In a plain local page (file:// or offline) fetch fails and we
@@ -48,11 +49,13 @@ async function webList(endpoint) {
   return [];
 }
 
-// Lazy WebSocket link to the desktop host (web mode only). Created when the
-// first subscriber registers; multiplexes 'state'/'play'/'roam' messages onto
-// the on*Changed callbacks below. In CDN mode the live PC address is asked
-// from the pet-hub cloud function first (tunnel URL, else LAN candidates).
-let webSync = null;
+// Web-mode sync runs over up to two lanes fanned into the same callbacks:
+//   WS lane   — the desktop host's roaming WebSocket (fast, PC must be on);
+//   cloud lane— CloudBase realtime database (always on, no PC needed). CDN
+// mode gets both; a LAN page only has the WS lane; the desktop has neither.
+let webCbs = null;
+let webSync = null; // WS lane (RoamingClient), null while the PC is offline
+let cloudSync = null; // cloud lane (CloudPetSync), CDN mode only
 async function webWsUrl() {
   const hub = CDN?.hubUrl;
   if (hub) {
@@ -70,8 +73,9 @@ async function webWsUrl() {
         if (secureOnly && !/^https:/i.test(c)) continue;
         return `${c.replace(/^http/i, 'ws')}/ws`;
       }
+      return null; // PC offline: the static host has no /ws to fall back to
     } catch {
-      /* hub unreachable: standalone mode, try same-origin */
+      return null; // hub unreachable: cloud-only mode
     }
   }
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
@@ -85,26 +89,71 @@ function cdnEntry(entry, kind) {
   return { ...entry, url: `${CDN.base}${kind}/${file}` };
 }
 
-function ensureWebSync() {
-  if (webSync) return webSync;
-  const client = new RoamingClient();
-  const cbs = { model: [], animation: [], facing: [], play: [], roam: [] };
-  client._cbs = cbs;
-  client.on(ROAMING_EVENTS.STATE, (msg) => {
-    if (msg.model) for (const cb of cbs.model) cb(cdnEntry(msg.model, 'models'));
-    if (msg.animation) for (const cb of cbs.animation) cb(cdnEntry(msg.animation, 'animations'));
-    if (msg.animation === null) for (const cb of cbs.animation) cb(null);
-    if (typeof msg.facing === 'number') for (const cb of cbs.facing) cb(msg.facing);
+function ensureWebBus() {
+  if (webCbs) return webCbs;
+  webCbs = { model: [], animation: [], facing: [], play: [], roam: [] };
+
+  // Shared fan-in: both lanes speak the same 'state'/'play' vocabulary.
+  const dispatch = (msg) => {
+    if (msg.model) for (const cb of webCbs.model) cb(cdnEntry(msg.model, 'models'));
+    if (msg.animation) for (const cb of webCbs.animation) cb(cdnEntry(msg.animation, 'animations'));
+    if (msg.animation === null) for (const cb of webCbs.animation) cb(null);
+    if (typeof msg.facing === 'number') for (const cb of webCbs.facing) cb(msg.facing);
+  };
+
+  // WS lane. Started only when the PC advertises a reachable address; a slow
+  // re-poll of live.json picks the PC up when it comes online later (and
+  // follows tunnel restarts, which always change the URL).
+  const startWsLane = (url) => {
+    const client = new RoamingClient();
+    client.on(ROAMING_EVENTS.STATE, dispatch);
+    client.on(ROAMING_EVENTS.PLAY, (msg) => {
+      if (msg.entry) for (const cb of webCbs.play) cb(cdnEntry(msg.entry, 'animations'));
+      // Relay PC-side one-shots to the cloud lane so pages that only have
+      // the cloud lane (PC reachable for nobody) still play them.
+      cloudSync?.send(ROAMING_EVENTS.PLAY, msg);
+    });
+    client.on(ROAMING_EVENTS.ROAM, (msg) => {
+      for (const cb of webCbs.roam) cb(msg.cmd);
+    });
+    client.connect(url); // reconnects on its own
+    webSync = client;
+  };
+  webWsUrl().then((url) => {
+    if (url) startWsLane(url);
   });
-  client.on(ROAMING_EVENTS.PLAY, (msg) => {
-    if (msg.entry) for (const cb of cbs.play) cb(cdnEntry(msg.entry, 'animations'));
-  });
-  client.on(ROAMING_EVENTS.ROAM, (msg) => {
-    for (const cb of cbs.roam) cb(msg.cmd);
-  });
-  webWsUrl().then((url) => client.connect(url)); // reconnects on its own
-  webSync = client;
-  return client;
+  setInterval(async () => {
+    if (webCbs === null) return; // torn down
+    const url = await webWsUrl();
+    if (!url) return;
+    if (!webSync) startWsLane(url);
+    else if (url !== webSync.url) {
+      webSync.close();
+      webSync = null;
+      startWsLane(url);
+    }
+  }, 30000);
+
+  // Cloud lane: the always-on backbone (CDN mode only). Needs nothing from
+  // the PC — anonymous login + realtime watch on the shared pet document.
+  if (CDN?.envId) {
+    cloudSync = new CloudPetSync();
+    cloudSync.on(ROAMING_EVENTS.STATE, dispatch);
+    cloudSync.on(ROAMING_EVENTS.PLAY, (msg) => {
+      if (msg.entry) for (const cb of webCbs.play) cb(cdnEntry(msg.entry, 'animations'));
+    });
+    cloudSync.start(CDN.envId);
+    // The first snapshot can beat the app's subscriber registrations; replay
+    // the shared state once they've had a chance to run.
+    setTimeout(() => cloudSync?.replay(), 300);
+  }
+  return webCbs;
+}
+
+/** Selection made on this device: fan out to every upstream lane. */
+function sendPick(what, value) {
+  webSync?.send(ROAMING_EVENTS.PICK, { what, value });
+  cloudSync?.send(ROAMING_EVENTS.PICK, { what, value });
 }
 
 export const platform = {
@@ -143,7 +192,7 @@ export const platform = {
   // roaming WebSocket (desktop switches model -> every phone follows).
   onModelChanged(cb) {
     if (bridge) bridge.onModelChanged(cb);
-    else ensureWebSync()._cbs.model.push(cb);
+    else ensureWebBus().model.push(cb);
   },
 
   // Desktop only: right-click -> native model picker popup at that point.
@@ -166,23 +215,23 @@ export const platform = {
   },
   onAnimationChanged(cb) {
     if (bridge) bridge.onAnimationChanged(cb);
-    else ensureWebSync()._cbs.animation.push(cb);
+    else ensureWebBus().animation.push(cb);
   },
   onFacingChanged(cb) {
     if (bridge) bridge.onFacingChanged(cb);
-    else ensureWebSync()._cbs.facing.push(cb);
+    else ensureWebBus().facing.push(cb);
   },
 
   // Desktop: one-shot clip from the CLI channel (--play). Web: same broadcast.
   onPlayOnce(cb) {
     if (bridge) bridge.onPlayOnce(cb);
-    else ensureWebSync()._cbs.play.push(cb);
+    else ensureWebBus().play.push(cb);
   },
 
   // Roaming hand-off commands ('exit' = run off screen, 'enter' = run in).
   onRoam(cb) {
     if (bridge) bridge.onRoam(cb);
-    else ensureWebSync()._cbs.roam.push(cb);
+    else ensureWebBus().roam.push(cb);
   },
 
   // Desktop renderer finished its exit animation; the main process hides the
@@ -193,19 +242,19 @@ export const platform = {
 
   // Web (phone) -> desktop: apply a selection made in the phone picker.
   setModelRemote(name) {
-    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'model', value: name });
+    if (!bridge) sendPick("model", name);
   },
   setAnimationRemote(name) {
-    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'animation', value: name });
+    if (!bridge) sendPick("animation", name);
   },
   setFacingRemote(deg) {
-    if (!bridge) ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'facing', value: deg });
+    if (!bridge) sendPick("facing", deg);
   },
 
   // Either side: hand the pet to the other device ('phone' | 'desktop').
   roamTo(target) {
     if (bridge) return false;
-    ensureWebSync().send(ROAMING_EVENTS.PICK, { what: 'roam', value: target });
+    webSync?.send(ROAMING_EVENTS.PICK, { what: "roam", value: target });
     return true;
   },
 

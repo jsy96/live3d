@@ -1,12 +1,21 @@
 # AI Live3D 桌宠
 
-AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码桌面与手机浏览器共用——桌面端起局域网服务，手机扫码即让桌宠「跑进」手机屏幕（触摸手势全兼容），WebSocket 双向同步支持手机端换模型/换动作，还能一键把桌宠在电脑和手机之间「赶来赶去」。
+AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲染，支持摸头 / 拖拽 / 戳 / 双击等手势互动，可点击穿透不挡桌面。架构上渲染层与 Electron 壳完全解耦，同一套代码桌面与手机浏览器共用——桌面端起局域网服务，手机扫码即让桌宠「跑进」手机屏幕（触摸手势全兼容），WebSocket 双向同步支持手机端换模型/换动作，还能一键把桌宠在电脑和手机之间「赶来赶去」。**云版彻底无电脑**：页面托管在腾讯云 CloudBase CDN，任何设备打开固定链接即是完整播放器，跨设备同步走 CloudBase 实时数据库（匿名登录 + watch 推送）——电脑从此可开可不开。
 
 - Gitee 仓库：<https://gitee.com/jsy96/live3d>
-- 当前版本：**v1.0.261128-1**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
+- 云版入口：**`https://zc.leige.online/`**（自定义域名，绑定中——就绪前用默认地址 `https://ajmj-d2g1eishpbe7677fe-1301305388.tcloudbaseapp.com/pet/`，该测试域名浏览器首次访问会弹腾讯「风险提醒」确认页，自定义域名无此页）
+- 当前版本：**v1.0.261128-12**（版本号唯一来源：`main/version.js`，显示于托盘菜单/tooltip 与 `?debug=1` 角标）
 
 ## 更新记录
 
+- **v1.0.261128-12**（2026-11-28）
+  - **云版桌宠彻底无电脑（跨设备同步上云）**：新增云同步通道 `src/sync/cloud.js`——CDN 页匿名登录 CloudBase，`watch` 实时数据库共享文档 `pet_state/global`，任何设备在控制台换模型/换待机动画即写文档，**所有打开链接的设备实时跟随**（电脑开不开机都行）；本地选择先立即生效再上行（沿用 v11 的本地优先架构），PC WebSocket 通道保留为「电脑在线」快车道（漫游移交/`--play` 等仍走隧道），云通道是永在线主干——两通道 fan-in 到同一组回调，app.js 按 basename 去重天然防环
+  - **云端一次性配置**（一次性，已全部就位）：集合 `pet_state`（CLI `db nosql execute` 建）+ 权限规则 `{"read": true, "write": true}`（API `ModifySafeRule`，AclTag=CUSTOM——匿名可读写；READWRITE 等简单标签不含「所有用户可写」）；匿名登录环境默认可用；`@cloudbase/js-sdk@3.11.2` 以子路径 `app/auth/database/realtime` 按需动态 import（仅 CDN 页加载，桌面/LAN bundle 不背这 ~250KB）
+  - **踩坑记录（js-sdk v3）**：①文档 watch 必须动态 import `@cloudbase/js-sdk/realtime`（它给 database 注入 wsClientClass，否则报 "to use realtime you must import realtime module first"）；②watch 回调是 `onChange/onError`（v1 的 `onSnapshot` 已改名）；③子路径模块 import 即自注册组件，手动 `registerAuth/registerDatabase/registerRealtime` 反而报 "Duplicate component"（已删）；④`doc('global').watch()` 自带 `_id` 查询比 `where().watch()` 干净
+  - **同步协议细节**：文档字段 `{model, animation, play:{name,ts,from}, ts, from}`（basename-only，页面按自己的 assets 目录解析 URL）；diff 派发（快照只发变化字段）；`from`+`ts` 去重自己的一次性 `play` 回声；PC 在线时 WS 通道收到的 `play` 广播会转发写云（云通道设备也能跳）；快照早于订阅注册到达的竞态用 300ms 后 `replay()` 补播；PC 离线时 WS 通道不再傻连（webWsUrl 返回 null），30s 慢轮询 live.json 等电脑上线/隧道换 URL 自动重连
+  - **实测（双无头 Edge = 两台独立设备，本地静态 + 真 TCB 云端）**：双端匿名登录 + watch 连接 ✔ → A 页点换模型 → 云文档更新 → **B 页 3s 内实时跟随收敛** ✔ → B 重开页吃到初始快照收敛到共享状态 ✔；权限规则生效前匿名写被静默拒绝（DB 文档停留 init 态）排查定位 ✔
+  - **域名迁移进行中（目标 `https://zc.leige.online/`，老金拍板 TCB 直接换绑）**：TCB 个人版限 1 个自定义域名，已解绑 `old.leige.online`（eldercare 应用失去该入口，改走默认域名 `https://ajmj-d2g1eishpbe7677fe-1301305388.ap-shanghai.app.tcloudbase.com/eldercare`）；**卡点**：现有证书都是单域名（old/裸域），zc 需新签免费证书，而 CLI 票据无 `ssl:ApplyCertificate` 权限——需老金在腾讯云 SSL 控制台申请 zc 免费证书（DNS 验证 TXT 记录加到 Cloudflare）+ CF 加 CNAME 后，其余（绑域名/加路由 `/`→重写 `/pet`、`/pet` 直通/安全域名/验证）全部 CLI 自动完成；**发现**：tcloudbaseapp 默认测试域名对浏览器弹「风险提醒」确认页（curl 无 UA 拦截不触发）——这正是换自定义域名的又一理由
+  - 测试工具沉淀：`scripts/test-cloud-sync.mjs`（双浏览器云同步端到端：A 点选 → B 收敛断言 + 失败时双端控制台转储）、`scripts/cdp-diag.mjs`（单页 CDP 诊断：标题/CDN 配置/脚本清单/全量控制台）
 - **v1.0.261128-11**（2026-11-28）
   - **CDN 页离线可玩（电脑关机也能完整玩）**：手机端控制台的换模型/换待机动画改为**本地立即生效 + 在线则同步**（picker 回调重构为 `onPickModel/onPickAnimation` 注入 app.js：先本地 `loadModel/loadAnimation`，再 `setModelRemote/setAnimationRemote` 上行；广播回传按 basename 去重不重载）——CDN 页本身就是完整单机播放器，朋友拿固定链接随时可玩，**你电脑开不开机都行**；电脑在线时选择同步全端、漫游移交可用
   - 实测：关隧道（live.json 自动去 tunnelUrl）→ CDN 页纯本地从 AvatarSample_A 切到 Seed-san（chip 移动、无报错）；开隧道 → live.json 自动带新 tunnelUrl → 页面重连 WS、勾选收敛到桌面当前模型；`live.json` 双向自动更新（开/关隧道均验证）
@@ -187,12 +196,16 @@ AI 驱动的 3D 桌面宠物：VRM 模型 + Electron 透明窗口 + Three.js 渲
 | 四期 | 手机网页端（局域网扫码，同一 renderer bundle，触摸交互） | ✅ 已实现 |
 | 四期 | 双向同步 + 手机端控制台（换模型/换动画/朝向，WS 实时跟随） | ✅ 已实现 |
 | 四期 | 漫游交接（跑出/跑入动画，断线自动回家，`--show` 召回） | ✅ 已实现 |
+| 云版 | 固定链接完整播放器（CDN 托管，电脑关机可玩） | ✅ 已实现 |
+| 云版 | 跨设备云同步（CloudBase 实时数据库，匿名登录，无电脑跟随） | ✅ 已实现 |
+| 云版 | 自定义域名 `zc.leige.online` | 🔧 绑定中（待证书） |
 
 ## 技术栈
 
 - **壳**：Electron 33（透明无边框置顶窗口、托盘、单实例锁、点击穿透 `setIgnoreMouseEvents`）
 - **渲染**：Three.js + `@pixiv/three-vrm` v3（VRM 表情/口型/视线/弹簧骨骼），桌面与手机浏览器共用同一 bundle
 - **手机端**：主进程局域网 HTTP + WebSocket 服务（`node:http` + `ws`）+ `qrcode`（扫码窗口 SVG）
+- **云版**：腾讯云 CloudBase 静态托管（页面/模型/动画）+ 实时数据推送（`@cloudbase/js-sdk` 子路径按需加载：app/auth/database/realtime，匿名登录 + `pet_state/global` 共享文档 watch）
 - **打包**：esbuild（renderer 打成单文件 `dist/bundle.js`，避开 `file://` ESM 限制）
 - **模型**：VRM 1.0/0.x（示例模型来自 pixiv/three-vrm 官方仓库；推荐用 [VRoid Studio](https://vroid.com/studio) 自己捏）
 - **图标**：`scripts/gen_icon.py`（uv + pillow 生成）
@@ -224,7 +237,9 @@ ai-live3d/
 │   │   └── mouse.js         # Pointer Events 手势（鼠标+触摸通用）
 │   ├── ai/chat-provider.js  # 三期接口：LLM 对话 + 情绪映射 + 口型
 │   ├── hand-tracking.js     # 二期接口：MediaPipe 手势
-│   └── sync/roaming.js      # 四期接口：设备间漫游协议
+│   └── sync/
+│       ├── roaming.js       # 四期接口：设备间漫游协议（PC WS 通道）
+│       └── cloud.js         # 云同步通道（CDN 页：匿名登录 + 实时数据库 watch）
 ├── models/                  # 放 .vrm 模型（见 models/README.md，不入 git）
 ├── animations/              # 放 .vrma 待机动画（见 animations/README.md，不入 git）
 ├── assets/                  # icon.png / tray.png + PWA（manifest.webmanifest / sw.js / icon-{192,512}.png）

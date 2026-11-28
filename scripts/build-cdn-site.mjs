@@ -14,11 +14,16 @@ const OUT = path.join(ROOT, 'dist', 'cdn', 'pet');
 const BASE = '/pet/';
 
 let hubUrl = null;
+let tcbEnv = null;
 try {
   const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'tcb-config.json'), 'utf8'));
   // live.json is published to the same static hosting by the PC registrar
   // (main/tcb.js) — same-origin fetch, no CORS, no cloud function needed.
-  if (typeof cfg.envId === 'string' && cfg.envId) hubUrl = `${BASE}live.json`;
+  if (typeof cfg.envId === 'string' && cfg.envId) {
+    hubUrl = `${BASE}live.json`;
+    // Cloud sync lane (pet_state realtime document) — the no-PC backbone.
+    tcbEnv = cfg.envId;
+  }
 } catch {
   /* standalone build */
 }
@@ -87,7 +92,7 @@ fs.writeFileSync(
 // Runtime config (loaded as a normal script to satisfy script-src 'self').
 fs.writeFileSync(
   path.join(OUT, 'cdn-config.js'),
-  `window.__LIVE3D_CDN__ = ${JSON.stringify({ hubUrl, base: BASE })};\n`
+  `window.__LIVE3D_CDN__ = ${JSON.stringify({ hubUrl, base: BASE, envId: tcbEnv })};\n`
 );
 
 // index.html: CDN CSP (live endpoints live on other origins) + config script.
